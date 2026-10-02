@@ -22,6 +22,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -64,6 +65,34 @@ func (c *Client) socketProtocols(token string) []string {
 	}
 }
 
+// browserProtocolList writes the WebSocket subprotocol list the way browsers
+// do, "a, b, c". The WebSocket library writes "a,b,c", which is just as valid,
+// but OLX's gateway takes the list apart at ", " and then does not find the
+// token in it: the same handshake is answered 403 instead of 101.
+type browserProtocolList struct {
+	base http.RoundTripper
+}
+
+func (b browserProtocolList) RoundTrip(req *http.Request) (*http.Response, error) {
+	if protocols := req.Header.Values("Sec-WebSocket-Protocol"); len(protocols) > 0 {
+		var all []string
+		for _, value := range protocols {
+			for _, protocol := range strings.Split(value, ",") {
+				if protocol = strings.TrimSpace(protocol); protocol != "" {
+					all = append(all, protocol)
+				}
+			}
+		}
+		req = req.Clone(req.Context())
+		req.Header.Set("Sec-WebSocket-Protocol", strings.Join(all, ", "))
+	}
+	base := b.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(req)
+}
+
 func (c *Client) dialSocket(ctx context.Context) (*websocket.Conn, error) {
 	token, err := c.IDToken(ctx)
 	if err != nil {
@@ -82,7 +111,7 @@ func (c *Client) dialSocket(ctx context.Context) (*websocket.Conn, error) {
 		header.Set("Pragma", "no-cache")
 	}
 	conn, _, err := websocket.Dial(dialCtx, c.cfg.SocketURL, &websocket.DialOptions{
-		HTTPClient:   &http.Client{Transport: c.HTTP.Transport},
+		HTTPClient:   &http.Client{Transport: browserProtocolList{c.HTTP.Transport}},
 		HTTPHeader:   header,
 		Subprotocols: c.socketProtocols(token),
 	})

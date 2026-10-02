@@ -149,7 +149,20 @@ func (f *fakeOLX) handleSocket(w http.ResponseWriter, r *http.Request) {
 	f.lock.Lock()
 	f.socketProtos = append([]string(nil), r.Header.Values("Sec-WebSocket-Protocol")...)
 	f.socketOrigin = r.Header.Get("Origin")
+	valid := f.validToken
 	f.lock.Unlock()
+	// Like OLX's gateway: the list is taken apart at ", " and the token must
+	// be one of its items, or the handshake is refused.
+	authorized := false
+	for _, protocol := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ", ") {
+		if protocol == url.QueryEscape("access_token="+valid) {
+			authorized = true
+		}
+	}
+	if !authorized {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		Subprotocols:   []string{url.QueryEscape("X-Client=DESKTOP")},
 		OriginPatterns: []string{"www.olx.pl"},
