@@ -624,9 +624,9 @@ func (c *Client) Download(ctx context.Context, fileURL string, maxSize int64) ([
 // wwwAPIVersion is the version of its own API the website asks www.olx.pl for.
 const wwwAPIVersion = "v1.19"
 
-// MaxUsersPerRequest is how many profiles are asked for at once; the website
-// asks for a page of conversations' worth.
-const MaxUsersPerRequest = 40
+// MaxUsersPerRequest is how many profiles OLX lets one request ask for; more
+// is answered with a validation error.
+const MaxUsersPerRequest = 10
 
 // GetUsers returns the public profiles of the given users, with their online
 // status. This is on www.olx.pl, see [Client.WWW].

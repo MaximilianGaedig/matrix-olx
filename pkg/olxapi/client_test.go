@@ -140,6 +140,12 @@ func (f *fakeOLX) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && r.URL.Path == "/api/apollo/token":
 		_, _ = io.WriteString(w, `{"data":{"token":"apollo-token"}}`)
 	case r.URL.Path == "/api/v1/users/":
+		if len(r.URL.Query()) > 10 {
+			// As OLX does.
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"status":400,"detail":"This collection should contain 10 elements or less."}}`)
+			return
+		}
 		_, _ = io.WriteString(w, `{"data":[{"id":5,"uuid":"r1","name":"A","is_online":true,"last_seen":"2026-10-02T11:20:00+02:00","user_photo":"https://img.example/u.jpg"}]}`)
 	default:
 		w.WriteHeader(http.StatusNoContent)
@@ -429,6 +435,13 @@ func TestUploadAndUsers(t *testing.T) {
 	if req.Header.Get("Sec-Fetch-Site") != "same-origin" || req.Header.Get("Origin") != "" ||
 		req.Header.Get("Referer") != "https://www.olx.pl/myaccount/answers/" || req.Header.Get("Accept-Language") != "pl" {
 		t.Errorf("a GET to www.olx.pl is same-origin: full referrer, no Origin: %v", req.Header)
+	}
+	many := make([]string, 23)
+	for i := range many {
+		many[i] = fmt.Sprintf("user-%d", i)
+	}
+	if batched, err := c.GetUsers(ctx, many); err != nil || len(batched) != 3 {
+		t.Errorf("23 users are three requests of at most ten: %d results, %v", len(batched), err)
 	}
 	if len(users) != 1 || !users[0].IsOnline || users[0].LastSeen.IsZero() || users[0].UserPhoto == "" {
 		t.Errorf("users = %+v", users[0])
