@@ -50,6 +50,10 @@ func (s Site) socketURL() string   { return "wss://ws.chat." + s.Domain }
 func (s Site) authHost() string    { return "https://login." + s.Domain }
 func (s Site) redirectURI() string { return s.Origin() + "/d/callback/" }
 
+// negotiationURL is the site's price negotiation service, which OLX runs per
+// country outside the site's own domain.
+func (s Site) negotiationURL() string { return "https://" + s.Code + ".ps.prd.eu.olx.org" }
+
 // DefaultSite is the site a login without a site belongs to.
 const DefaultSite = "pl"
 

@@ -351,3 +351,95 @@ func TestBlockChange(t *testing.T) {
 		t.Error("someone first seen blocked is ignored")
 	}
 }
+
+func TestParsePrice(t *testing.T) {
+	for input, want := range map[string]int64{
+		"1500": 150000, " 1 500 ": 150000, "1500,5": 150050, "1500.50": 150050, "1 500 zł": 150000, "0,99": 99, "1200 PLN": 120000,
+	} {
+		if got, err := parsePrice(input); err != nil || got != want {
+			t.Errorf("parsePrice(%q) = %d, %v; want %d", input, got, err, want)
+		}
+	}
+	for _, bad := range []string{"", "abc", "0", "12,345", "1.2.3", "-5", "1e9"} {
+		if got, err := parsePrice(bad); err == nil {
+			t.Errorf("parsePrice(%q) = %d, want an error", bad, got)
+		}
+	}
+}
+
+func TestNegotiationWidget(t *testing.T) {
+	site := olxapi.MustSite("pl")
+	msg := &olxapi.Message{ID: "m1", Type: olxapi.MessageTypeBuyerProposed,
+		Extras: json.RawMessage(`{"negotiationId":"neg-1","proposal":{"price":{"cents":120000,"currency":"PLN"}},"ad":{"adId":1058393869}}`)}
+	extras, ok := olxapi.ParseNegotiationExtras(msg)
+	if !ok {
+		t.Fatal("extras did not parse")
+	}
+	entry := func(state string, actions ...string) *olxapi.NegotiationMessage {
+		e := &olxapi.NegotiationMessage{MessageID: "m1"}
+		e.Proposal.State = state
+		for _, a := range actions {
+			e.Actions = append(e.Actions, struct {
+				Type string `json:"type"`
+			}{a})
+		}
+		return e
+	}
+
+	// The seller looking at a buyer's pending proposal.
+	pending := entry(olxapi.ProposalPending, olxapi.NegotiationActionAccept, olxapi.NegotiationActionCounter)
+	text := negotiationText(msg.Type, extras, pending, "!olx")
+	if text != "Price proposal from the buyer: 1 200 zł (waiting for an answer)\nTo answer with another price: `!olx offer <price>`" {
+		t.Errorf("text = %q", text)
+	}
+	raw, err := json.Marshal(negotiationButtons(site, extras, pending, "!olx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The format clients render for the Telegram bridge's keyboards.
+	want := `{"message_id":0,"keyboard":"inline","rows":[[` +
+		`{"text":"Accept 1 200 zł","type":"callback","command":"!olx accept-offer neg-1 120000 PLN"},` +
+		`{"text":"Propose another price","type":"copy","copy_text":"!olx offer "}]]}`
+	if string(raw) != want {
+		t.Errorf("buttons =\n%s\nwant\n%s", raw, want)
+	}
+
+	// The buyer looking at their own pending proposal: nothing to press.
+	own := entry(olxapi.ProposalPending)
+	if negotiationButtons(site, extras, own, "!olx") != nil {
+		t.Error("a proposal the user cannot act on has no buttons")
+	}
+	if got := negotiationText(msg.Type, extras, entry(olxapi.ProposalReplaced), "!olx"); got != "Price proposal from the buyer: 1 200 zł (replaced by a newer proposal)" {
+		t.Errorf("replaced: %q", got)
+	}
+	// Without the negotiation service the proposal is still shown.
+	if got := negotiationText(olxapi.MessageTypeSellerProposed, extras, nil, "!olx"); got != "Counter-offer from the seller: 1 200 zł" {
+		t.Errorf("without state: %q", got)
+	}
+	if negotiationButtons(site, extras, nil, "!olx") != nil {
+		t.Error("no state, no buttons")
+	}
+	delivery := negotiationButtons(site, extras, entry(olxapi.ProposalAccepted, olxapi.NegotiationActionDelivery), "!olx")
+	if delivery == nil || delivery.Rows[0][0].Type != "url" || delivery.Rows[0][0].URL != "https://www.olx.pl/d/oferta/x-ID19CUAR.html" {
+		t.Errorf("buy with delivery leads to the ad: %+v", delivery)
+	}
+}
+
+func TestReportRoles(t *testing.T) {
+	conv := &olxapi.Conversation{UserID: "5", Respondent: olxapi.Respondent{ID: "7", Type: "seller", Name: "Kuba"}}
+	if buyer, seller, err := reportRoles(conv); err != nil || buyer != "5" || seller != "7" {
+		t.Errorf("talking to a seller: buyer=%s seller=%s %v", buyer, seller, err)
+	}
+	conv.Respondent.Type = "buyer"
+	if buyer, seller, err := reportRoles(conv); err != nil || buyer != "7" || seller != "5" {
+		t.Errorf("talking to a buyer: buyer=%s seller=%s %v", buyer, seller, err)
+	}
+	conv.Respondent.Type = ""
+	if _, _, err := reportRoles(conv); err == nil {
+		t.Error("a chat that does not say who is who cannot be reported")
+	}
+	reasons := []*olxapi.ReportReason{{Key: "spam", Label: "Spam", Description: "Niechciane"}, {Key: "other", Label: "Inne", NeedsDescription: true}}
+	if got := formatReasons(reasons); got != "* `spam` – Spam: Niechciane\n* `other` – Inne (needs a description)\n" {
+		t.Errorf("reasons = %q", got)
+	}
+}

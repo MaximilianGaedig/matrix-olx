@@ -137,6 +137,15 @@ func (f *fakeOLX) handleAPI(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"error":"not found"}`)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/conversations/"):
 		_, _ = io.WriteString(w, `{"data":{"id":"c1","user_uuid":"me","respondent":{"uuid":"r1","name":"A"},"messages":[{"id":"m1","user_uuid":"r1","created_at":"2026-10-02T09:07:11.123+02:00","text":"hi"}]}}`)
+	case r.Method == http.MethodGet && r.URL.Path == "/price-negotiations/v1/ad/1101945349/config":
+		_, _ = io.WriteString(w, `{"enabled":false,"enabledWithPayAndShip":false,"enabledWithoutPayAndShip":true,"constraints":{"price":{"minPrice":{"cents":104300,"currency":"PLN"},"maxPrice":{"cents":149000,"currency":"PLN"},"minAcceptablePercent":70}}}`)
+	case r.Method == http.MethodGet && r.URL.Path == "/price-negotiations/v1/negotiation/neg-1/messages":
+		_, _ = io.WriteString(w, `{"youAre":"SELLER","messages":[{"messageId":"m-old","proposal":{"state":"REPLACED","price":{"cents":110000,"currency":"PLN"}},"actions":[]},{"messageId":"m-new","proposal":{"state":"PENDING","price":{"cents":120000,"currency":"PLN"}},"actions":[{"type":"ACCEPT"},{"type":"PROPOSE_NEW_PRICE"}]}]}`)
+	case r.Method == http.MethodPost && r.URL.Path == "/price-negotiations/v1/negotiation/neg-gone/accept":
+		w.WriteHeader(http.StatusConflict)
+		_, _ = io.WriteString(w, `{"errors":[{"title":"Conflict","description":"The proposal is no longer pending"}]}`)
+	case r.Method == http.MethodGet && r.URL.Path == "/moderation/chat/abuse/reasons":
+		_, _ = io.WriteString(w, `[{"key":"spam","label":"Spam","description":"Niechciane wiadomości","needs_description":false},{"key":"other","label":"Inne","description":"","needs_description":true}]`)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/apollo/token":
 		_, _ = io.WriteString(w, `{"data":{"token":"apollo-token"}}`)
 	case r.URL.Path == "/api/v1/users/":
@@ -200,13 +209,15 @@ func (f *fakeOLX) handleSocket(w http.ResponseWriter, r *http.Request) {
 
 func (f *fakeOLX) client(tokens Tokens) *Client {
 	cfg := Config{
-		ChatURL:   f.server.URL,
-		WWWURL:    f.server.URL,
-		UploadURL: f.server.URL + "/upload",
-		SocketURL: "ws" + strings.TrimPrefix(f.server.URL, "http") + "/ws",
-		UserAgent: testUA,
-		DeviceID:  "device-1",
-		Auth:      AuthConfig{Host: f.server.URL},
+		ChatURL:        f.server.URL,
+		WWWURL:         f.server.URL,
+		UploadURL:      f.server.URL + "/upload",
+		NegotiationURL: f.server.URL,
+		ModerationURL:  f.server.URL,
+		SocketURL:      "ws" + strings.TrimPrefix(f.server.URL, "http") + "/ws",
+		UserAgent:      testUA,
+		DeviceID:       "device-1",
+		Auth:           AuthConfig{Host: f.server.URL},
 	}
 	return NewClient(cfg, tokens, f.server.Client(), nil, zerolog.Nop())
 }
@@ -722,5 +733,95 @@ func TestSocketHandshakeOnTheWire(t *testing.T) {
 	}
 	if strings.Contains(raw, "Sec-Websocket-") {
 		t.Errorf("handshake headers must not be in Go's canonical spelling:\n%s", raw)
+	}
+}
+
+func TestNegotiation(t *testing.T) {
+	f := newFakeOLX(t)
+	c := f.client(Tokens{RefreshToken: "good-refresh"})
+	ctx := context.Background()
+
+	cfg, err := c.GetNegotiationConfig(ctx, "1101945349")
+	if err != nil || !cfg.Open() || cfg.Constraints.Price.MinPrice.Cents != 104300 || cfg.Constraints.Price.MaxPrice.String() != "1 490 zł" {
+		t.Fatalf("config = %+v, %v", cfg, err)
+	}
+	req, _ := f.lastRequest()
+	if req.Header.Get("X-Site-Code") != "" || req.Header.Get("X-Client") != "" || req.Header.Get("Sec-Fetch-Site") != "cross-site" || req.Header.Get("Authorization") == "" {
+		t.Errorf("the negotiation service is another site: no chat headers, cross-site, with the token: %v", req.Header)
+	}
+
+	neg, err := c.GetNegotiation(ctx, "neg-1")
+	if err != nil || neg.YouAre != "SELLER" || len(neg.Messages) != 2 {
+		t.Fatalf("negotiation = %+v, %v", neg, err)
+	}
+	pending := neg.Message("m-new")
+	if pending == nil || pending.Proposal.State != ProposalPending || !pending.Can(NegotiationActionAccept) || !pending.Can(NegotiationActionCounter) || pending.Can(NegotiationActionDelivery) {
+		t.Errorf("pending proposal = %+v", pending)
+	}
+	if old := neg.Message("m-old"); old == nil || old.Proposal.State != ProposalReplaced || old.Can(NegotiationActionAccept) {
+		t.Errorf("replaced proposal = %+v", old)
+	}
+	if neg.Message("unknown").Can(NegotiationActionAccept) {
+		t.Error("a message the service does not know has no actions")
+	}
+
+	price := Money{Cents: 120000, Currency: "PLN"}
+	for _, step := range []struct {
+		name string
+		call func() error
+		path string
+	}{
+		{"propose", func() error { return c.ProposePrice(ctx, "1101945349", price) }, "/price-negotiations/v1/ad/1101945349"},
+		{"counter", func() error { return c.CounterOffer(ctx, "neg-1", price) }, "/price-negotiations/v1/negotiation/neg-1"},
+		{"accept", func() error { return c.AcceptProposal(ctx, "neg-1", price) }, "/price-negotiations/v1/negotiation/neg-1/accept"},
+	} {
+		if err := step.call(); err != nil {
+			t.Errorf("%s: %v", step.name, err)
+			continue
+		}
+		req, body := f.lastRequest()
+		if req.Method != http.MethodPost || req.URL.Path != step.path || body != `{"price":{"cents":120000,"currency":"PLN"}}` {
+			t.Errorf("%s: %s %s %s", step.name, req.Method, req.URL.Path, body)
+		}
+	}
+
+	err = c.AcceptProposal(ctx, "neg-gone", price)
+	var negErr *NegotiationError
+	if !errors.As(err, &negErr) || negErr.Description != "The proposal is no longer pending" {
+		t.Errorf("a refusal carries the service's own words, got %v", err)
+	}
+
+	msg := &Message{ID: "m-new", Type: MessageTypeBuyerProposed, Extras: json.RawMessage(`{"negotiationId":"neg-1","proposal":{"price":{"cents":120000,"currency":"PLN"}},"ad":{"adId":1101945349}}`)}
+	extras, ok := ParseNegotiationExtras(msg)
+	if !ok || extras.NegotiationID != "neg-1" || extras.Proposal.Price.String() != "1 200 zł" || extras.Ad.AdID != "1101945349" {
+		t.Errorf("extras = %+v %v", extras, ok)
+	}
+	if _, ok = ParseNegotiationExtras(&Message{Type: "standard", Extras: msg.Extras}); ok {
+		t.Error("an ordinary message is not a proposal")
+	}
+}
+
+func TestReport(t *testing.T) {
+	f := newFakeOLX(t)
+	c := f.client(Tokens{RefreshToken: "good-refresh"})
+	ctx := context.Background()
+
+	reasons, err := c.GetReportReasons(ctx)
+	if err != nil || len(reasons) != 2 || reasons[0].Key != "spam" || reasons[0].NeedsDescription || !reasons[1].NeedsDescription {
+		t.Fatalf("reasons = %+v, %v", reasons, err)
+	}
+	req, _ := f.lastRequest()
+	if req.URL.Query().Get("lang") != "pl_PL" || req.URL.Query().Get("siteCode") != "olxpl" {
+		t.Errorf("reasons query = %s", req.URL.RawQuery)
+	}
+
+	err = c.ReportChat(ctx, &Report{AdID: "1101945349", BuyerID: "5", SellerID: "7", ReasonType: "spam"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, body := f.lastRequest()
+	if req.Method != http.MethodPost || req.URL.Path != "/moderation/chat/abuse/report" || req.Header.Get("X-Site-Code") != "olxpl" ||
+		body != `{"adId":1101945349,"buyerId":5,"sellerId":7,"reasonType":"spam","siteCode":"olxpl"}` {
+		t.Errorf("report: %s %s %s", req.Method, req.URL.Path, body)
 	}
 }

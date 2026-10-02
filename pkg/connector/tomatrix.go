@@ -165,6 +165,9 @@ func (c *OLXClient) convertAttachment(ctx context.Context, portal *bridgev2.Port
 // event per attachment. A message that is one attachment with text becomes a
 // single captioned file.
 func (c *OLXClient) convertMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg *olxapi.Message) (*bridgev2.ConvertedMessage, error) {
+	if extras, ok := olxapi.ParseNegotiationExtras(msg); ok {
+		return c.convertNegotiation(ctx, msg, extras), nil
+	}
 	converted := &bridgev2.ConvertedMessage{}
 	text := msg.Text
 	msgType := event.MsgText

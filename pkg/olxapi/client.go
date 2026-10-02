@@ -39,6 +39,7 @@ import (
 
 const (
 	DefaultUploadURL     = "https://ireland.apollo.olxcdn.com/v1/temp-files"
+	DefaultModerationURL = "https://content.css.olx.io/api/v1"
 	DefaultClientVersion = "b86050d0_10123458"
 	DefaultPlatform      = "DESKTOP"
 
@@ -55,18 +56,22 @@ type Config struct {
 	// empty follows from it.
 	Site Site
 
-	ChatURL       string
-	SocketURL     string
-	WWWURL        string
-	UploadURL     string
-	SiteCode      string
-	ClientVersion string
-	Platform      string
-	Language      string
-	WWWLanguage   string
-	UserAgent     string
-	DeviceID      string
-	Auth          AuthConfig
+	ChatURL   string
+	SocketURL string
+	WWWURL    string
+	UploadURL string
+	// NegotiationURL is the price negotiation service, ModerationURL the one
+	// that takes reports about chats.
+	NegotiationURL string
+	ModerationURL  string
+	SiteCode       string
+	ClientVersion  string
+	Platform       string
+	Language       string
+	WWWLanguage    string
+	UserAgent      string
+	DeviceID       string
+	Auth           AuthConfig
 }
 
 func (c *Config) setDefaults() {
@@ -82,6 +87,8 @@ func (c *Config) setDefaults() {
 	def(&c.SocketURL, c.Site.socketURL())
 	def(&c.WWWURL, c.Site.Origin())
 	def(&c.UploadURL, DefaultUploadURL)
+	def(&c.NegotiationURL, c.Site.negotiationURL())
+	def(&c.ModerationURL, DefaultModerationURL)
 	def(&c.SiteCode, c.Site.SiteCode)
 	def(&c.ClientVersion, DefaultClientVersion)
 	def(&c.Platform, DefaultPlatform)
@@ -205,6 +212,10 @@ type request struct {
 	body    any
 	headers map[string]string
 	www     bool
+	// external is a request to one of OLX's services outside the site's own
+	// domain (price negotiation, moderation): cross-site to the web app, and
+	// without the chat API's client headers.
+	external bool
 }
 
 func (c *Client) do(ctx context.Context, req request, out any) error {
@@ -241,8 +252,11 @@ func (c *Client) doOnce(ctx context.Context, req request, token string, out any)
 		return err
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+token)
-	httpReq.Header.Set("X-Client", c.cfg.Platform)
-	if req.www {
+	if req.external {
+		httpReq.Header.Set("Accept-Language", c.cfg.Language)
+		httpReq.Header.Set("Content-Type", "application/json")
+		setBrowserHeaders(httpReq.Header, c.cfg.UserAgent, c.cfg.Site.Origin(), siteCrossSite, req.method)
+	} else if httpReq.Header.Set("X-Client", c.cfg.Platform); req.www {
 		httpReq.Header.Set("Accept-Language", c.cfg.WWWLanguage)
 		httpReq.Header.Set("X-Platform-Type", "mobile-html5")
 		httpReq.Header.Set("Version", wwwAPIVersion)
