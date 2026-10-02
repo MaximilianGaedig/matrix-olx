@@ -29,6 +29,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/commands"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
+	"maunium.net/go/mautrix/id"
 
 	"github.com/MaximilianGaedig/mautrix-olx/pkg/olxapi"
 	"github.com/MaximilianGaedig/mautrix-olx/pkg/presence"
@@ -123,7 +124,7 @@ func (oc *OLXConnector) GetName() bridgev2.BridgeName {
 	return bridgev2.BridgeName{
 		DisplayName:      "OLX",
 		NetworkURL:       "https://www.olx.com",
-		NetworkIcon:      "",
+		NetworkIcon:      id.ContentURIString(oc.Config.Icon),
 		NetworkID:        "olx",
 		BeeperBridgeType: "github.com/MaximilianGaedig/mautrix-olx",
 		DefaultPort:      29341,
@@ -145,7 +146,7 @@ func (oc *OLXConnector) GetDBMetaTypes() database.MetaTypes {
 }
 
 func (oc *OLXConnector) GetBridgeInfoVersion() (info, capabilities int) {
-	return 1, 1
+	return 2, 1
 }
 
 // ValidateUserID accepts what OLX identifies people by: a UUID.

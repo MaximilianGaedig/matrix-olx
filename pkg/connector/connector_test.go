@@ -322,6 +322,9 @@ func TestConfigUpgrade(t *testing.T) {
 		if !strings.Contains(out, "sites:") || !strings.Contains(out, "presence:") || strings.Contains(out, "default_site") {
 			t.Errorf("%s: upgraded config is not the current shape:\n%s", name, out)
 		}
+		if !strings.Contains(out, "icon:") {
+			t.Errorf("%s: upgraded config has no icon setting:\n%s", name, out)
+		}
 		if name == "several sites" && !(strings.Contains(out, "- ua") && strings.Contains(out, "- ro")) {
 			t.Errorf("configured sites must survive the upgrade:\n%s", out)
 		}
