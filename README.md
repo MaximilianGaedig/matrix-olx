@@ -48,9 +48,10 @@ Send `login` to the bridge bot. It gives you a link to OLX's own login and takes
 - **The address that login ends on.** This gives the bridge a session of its own, the way OLX's
   website gets one (OAuth authorization code with PKCE); it never sees your password. That address
   belongs to a page that jumps to the home page at once, so read it without letting the page run:
-  type `view-source:` into the address bar of a new tab, paste the link after it, press Enter, and
-  send the address the tab ends on (`view-source:https://www.olx.pl/d/callback/?code=…`). If you
-  opened the link normally, the same address is in the browser's history.
+  the bot gives you the link with `view-source:` in front; paste that into the address bar of a new
+  tab and send the address the tab ends on (`view-source:https://www.olx.pl/d/callback/?code=…`).
+  Phone browsers have no `view-source:`; there, open the plain link and copy the
+  `www.olx.pl/d/callback/?code=…` entry from the browser's history.
 - **The session token of a logged-in browser.** The bot gives you one line for that browser's
   console that copies it. The bridge then shares the browser's session.
 

@@ -267,7 +267,13 @@ func TestLoginFlows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"https://login.olx.ro/oauth2/authorize?", "view-source:https://www.olx.ro/d/callback/?code=", "Ctrl+H", "OLX.ro", tokenSnippet} {
+	for _, want := range []string{
+		// Whole, so that it is one copy and one paste.
+		"```\nview-source:https://login.olx.ro/oauth2/authorize?",
+		// And plain, for browsers without view-source.
+		"(https://login.olx.ro/oauth2/authorize?",
+		"view-source:https://www.olx.ro/d/callback/?code=", "history", "OLX.ro", tokenSnippet,
+	} {
 		if !strings.Contains(step.Instructions, want) {
 			t.Errorf("instructions lack %q", want)
 		}
@@ -275,7 +281,7 @@ func TestLoginFlows(t *testing.T) {
 	if strings.Contains(step.Instructions, login.pkce.Verifier) {
 		t.Error("the verifier must not be shown")
 	}
-	if lines := strings.Count(step.Instructions, "\n"); lines > 16 {
+	if lines := strings.Count(step.Instructions, "\n"); lines > 20 {
 		t.Errorf("instructions are %d lines long, keep them short", lines)
 	}
 

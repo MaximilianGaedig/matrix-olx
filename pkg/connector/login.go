@@ -95,16 +95,20 @@ const tokenSnippet = `copy(JSON.parse(localStorage[Object.keys(localStorage).fin
 
 // instructions explains the login. OLX's login ends on a page that jumps to
 // the home page at once, so its address is read through view-source:, where
-// the page does not run. The other way is the session token of a browser.
+// the page does not run. A browser will not follow a link to view-source:, so
+// that address is given whole, to be pasted. Phones have no view-source: the
+// plain link and the browser history do the same there. The last way is the
+// session token of a logged-in browser.
 func (ol *OLXLogin) instructions(link string) string {
-	callback := ol.authConfig().Redirect()
+	callback := strings.TrimPrefix(ol.authConfig().Redirect(), "https://")
 	return "Log in to " + ol.Site.Name() + " in your browser first, then:\n\n" +
-		"1. Copy this link (don't open it):\n\n" + link + "\n\n" +
-		"2. In a new tab, type `view-source:` into the address bar, paste the link after it, press Enter.\n" +
-		"3. Copy the address the tab ends on (`view-source:" + callback + "?code=…`) and send it here.\n\n" +
-		"Opened the link normally? The address is in your history (Ctrl+H), starting with `" + strings.TrimPrefix(callback, "https://") + "?code=`.\n\n" +
-		"Or share your browser's session instead: on " + ol.Site.Domain + " open the console (F12), run the line below and send what it copies.\n\n" +
-		"`" + tokenSnippet + "`"
+		"1. Copy this whole line and paste it into the address bar of a new tab:\n\n" +
+		"```\nview-source:" + link + "\n```\n\n" +
+		"2. Copy the address the tab ends on (`view-source:https://" + callback + "?code=…`) and send it here.\n\n" +
+		"**On a phone** (no `view-source:` there): open [this link](" + link + "), let it land on the OLX home page, " +
+		"then copy the `" + callback + "?code=…` entry from the browser's history and send it here.\n\n" +
+		"**Or share a browser's session:** on " + ol.Site.Domain + " open the console (F12), run this and send what it copies:\n\n" +
+		"```\n" + tokenSnippet + "\n```"
 }
 
 func (ol *OLXLogin) Start(ctx context.Context) (*bridgev2.LoginStep, error) {
