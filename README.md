@@ -38,24 +38,21 @@ there is nothing to bridge there; Matrix clients are told so through the room's 
 ## Sites
 
 OLX runs one site per country on the same platform, and an account belongs to one of them. The
-bridge works with all of them: olx.pl, olx.ua, olx.ro, olx.bg, olx.pt, olx.kz and olx.uz. Each
-login is for one site; `network.default_site` only decides which one is offered first.
+bridge works with all of them: olx.pl, olx.ua, olx.ro, olx.bg, olx.pt, olx.kz and olx.uz.
+`network.sites` lists the ones offered for login (olx.pl by default).
 
 ## Logging in
 
-Send `login` to the bridge bot and pick a method for your site.
+Send `login` to the bridge bot. It gives you a link to OLX's own login and takes back either of:
 
-**Login page** (`page-pl`, `page-ua`, …) gives the bridge a session of its own, the way OLX's
-website gets one (OAuth authorization code with PKCE). The bridge never sees your password. OLX's
-login ends on a page that immediately jumps to the home page, so the address it ends on has to be
-read without letting that page run: copy the link the bot gives you, type `view-source:` into the
-address bar of a new tab, paste the link after it and press Enter. The address bar then shows
-`view-source:https://www.olx.pl/d/callback/?code=…`; send that to the bot. (If you opened the link
-normally, the same address is in the browser's history.)
-
-**Session token** (`token-pl`, …) copies the session of a browser that is logged in: the bot gives
-you one line to paste into that browser's developer console, which puts the token on the clipboard.
-The bridge then shares that browser's session.
+- **The address that login ends on.** This gives the bridge a session of its own, the way OLX's
+  website gets one (OAuth authorization code with PKCE); it never sees your password. That address
+  belongs to a page that jumps to the home page at once, so read it without letting the page run:
+  type `view-source:` into the address bar of a new tab, paste the link after it, press Enter, and
+  send the address the tab ends on (`view-source:https://www.olx.pl/d/callback/?code=…`). If you
+  opened the link normally, the same address is in the browser's history.
+- **The session token of a logged-in browser.** The bot gives you one line for that browser's
+  console that copies it. The bridge then shares the browser's session.
 
 ## Presence
 

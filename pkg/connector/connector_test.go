@@ -18,7 +18,7 @@ import (
 
 func testConfig(t *testing.T) *Config {
 	cfg := &Config{
-		DefaultSite:         "pl",
+		Sites:               []string{"pl"},
 		DisplaynameTemplate: "{{.Name}} (OLX)",
 		RoomNameTemplate:    "{{.Name}} · {{.Title}}",
 		ArchiveTag:          event.RoomTagLowPriority,
@@ -54,7 +54,7 @@ func TestExampleConfigParses(t *testing.T) {
 	if !cfg.Presence.Enabled || cfg.Presence.PollInterval.Seconds() != 60 || cfg.Presence.MaxUsers != 80 ||
 		!cfg.Sync.Archived || cfg.Sync.Interval.Minutes() != 30 ||
 		cfg.ArchiveTag != event.RoomTagLowPriority || cfg.SavedTag != event.RoomTagFavourite ||
-		cfg.ClientVersion == "" || cfg.DeleteChatPermanently || cfg.DefaultSite != "pl" {
+		cfg.ClientVersion == "" || cfg.DeleteChatPermanently || len(cfg.Sites) != 1 || cfg.Sites[0] != "pl" {
 		t.Errorf("example config parsed as %+v", cfg)
 	}
 }
@@ -237,48 +237,63 @@ func TestWWWClientIsHTTP1Only(t *testing.T) {
 
 func TestLoginFlows(t *testing.T) {
 	oc := &OLXConnector{Config: *testConfig(t)}
-	oc.Config.DefaultSite = "ua"
 	flows := oc.GetLoginFlows()
-	if len(flows) != 2*len(olxapi.Sites) || flows[0].ID != "page-ua" || flows[len(olxapi.Sites)].ID != "token-ua" {
-		t.Fatalf("every site gets both methods, the default site first: %+v", flows)
+	if len(flows) != 1 || flows[0].ID != "pl" {
+		t.Fatalf("one configured site is one flow, so that `login` needs no choice: %+v", flows)
+	}
+	oc.Config.Sites = []string{"ua", "olx.ro", "ua"}
+	flows = oc.GetLoginFlows()
+	if len(flows) != 2 || flows[0].ID != "ua" || flows[1].ID != "ro" {
+		t.Fatalf("flows follow the configured sites, in order, once each: %+v", flows)
 	}
 	for _, flow := range flows {
-		if _, _, err := oc.parseFlowID(flow.ID); err != nil {
+		if len(flow.Description) > 60 {
+			t.Errorf("flow descriptions are listed one per line and must stay short: %q", flow.Description)
+		}
+		if _, err := oc.CreateLogin(t.Context(), nil, flow.ID); err != nil {
 			t.Errorf("offered flow %q is not accepted: %v", flow.ID, err)
 		}
 	}
-	for id, want := range map[string]string{"page": "page/ua", "token": "token/ua", "browser": "page/ua", "page-pl": "page/pl", "token-ro": "token/ro"} {
-		method, site, err := oc.parseFlowID(id)
-		if err != nil || method+"/"+site.Code != want {
-			t.Errorf("parseFlowID(%q) = %s/%s, %v; want %s", id, method, site.Code, err, want)
-		}
+	if _, err := oc.CreateLogin(t.Context(), nil, "xx"); err == nil {
+		t.Error("an unknown site must be refused")
 	}
-	for _, bad := range []string{"password", "page-xx", ""} {
-		if _, _, err := oc.parseFlowID(bad); err == nil {
-			t.Errorf("parseFlowID(%q) must fail", bad)
-		}
+	oc.Config.Sites = nil
+	if flows = oc.GetLoginFlows(); len(flows) != 1 || flows[0].ID != olxapi.DefaultSite {
+		t.Errorf("no configured sites means the default one: %+v", flows)
 	}
 
-	login := &OLXLogin{Main: oc, Method: LoginMethodPage, Site: olxapi.MustSite("ro")}
+	login := &OLXLogin{Main: oc, Site: olxapi.MustSite("ro")}
 	step, err := login.Start(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"https://login.olx.ro/oauth2/authorize?", "view-source:", "view-source:https://www.olx.ro/d/callback/?code=", "Ctrl+H", "OLX.ro"} {
+	for _, want := range []string{"https://login.olx.ro/oauth2/authorize?", "view-source:https://www.olx.ro/d/callback/?code=", "Ctrl+H", "OLX.ro", tokenSnippet} {
 		if !strings.Contains(step.Instructions, want) {
-			t.Errorf("page instructions lack %q", want)
+			t.Errorf("instructions lack %q", want)
 		}
 	}
 	if strings.Contains(step.Instructions, login.pkce.Verifier) {
 		t.Error("the verifier must not be shown")
 	}
-	login = &OLXLogin{Main: oc, Method: LoginMethodToken, Site: olxapi.MustSite("pl")}
-	if step, err = login.Start(t.Context()); err != nil || !strings.Contains(step.Instructions, tokenSnippet) || !strings.Contains(step.Instructions, "https://www.olx.pl") {
-		t.Errorf("token instructions must carry the snippet and the site: %v", err)
+	if lines := strings.Count(step.Instructions, "\n"); lines > 16 {
+		t.Errorf("instructions are %d lines long, keep them short", lines)
+	}
+
+	// One input field takes either what the login page ends on or a token.
+	for input, wantToken := range map[string]bool{
+		"view-source:https://www.olx.ro/d/callback/?code=0c7e2f3a-1111-2222-3333-444455556666&state=x": false,
+		"https://www.olx.ro/d/callback/?code=abc":                                                      false,
+		"0c7e2f3a-1111-2222-3333-444455556666":                                                         false,
+		"eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAifQ." + strings.Repeat("Ab1_", 80): true,
+		"`eyJjdHkiOiJKV1QifQ." + strings.Repeat("x", 300) + "`":                                        true,
+	} {
+		if got := looksLikeToken(cleanInput(input)); got != wantToken {
+			t.Errorf("looksLikeToken(%.40q) = %v", input, got)
+		}
 	}
 	for in, want := range map[string]string{" abc \n": "abc", `"abc"`: "abc", "`abc`": "abc", "'abc'": "abc"} {
-		if got := cleanToken(in); got != want {
-			t.Errorf("cleanToken(%q) = %q", in, got)
+		if got := cleanInput(in); got != want {
+			t.Errorf("cleanInput(%q) = %q", in, got)
 		}
 	}
 }
