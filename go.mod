@@ -5,6 +5,8 @@ go 1.26.0
 tool go.mau.fi/util/cmd/maubuild
 
 require (
+	github.com/bogdanfinn/fhttp v0.6.9
+	github.com/bogdanfinn/tls-client v1.16.0
 	github.com/coder/websocket v1.8.15
 	github.com/google/uuid v1.6.0
 	github.com/rs/zerolog v1.35.1
@@ -16,14 +18,24 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
+	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/bdandy/go-errors v1.2.2 // indirect
+	github.com/bdandy/go-socks4 v1.2.3 // indirect
+	github.com/bogdanfinn/quic-go-utls v1.0.10-utls // indirect
+	github.com/bogdanfinn/utls v1.7.8-barnius // indirect
+	github.com/bogdanfinn/websocket v1.5.6-barnius // indirect
+	github.com/cloudflare/circl v1.6.2 // indirect
 	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
+	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-sqlite3 v1.14.52 // indirect
 	github.com/petermattis/goid v0.0.0-20260820044319-269ab09b5261 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
+	github.com/tam7t/hpkp v0.0.0-20160821193359-2b70b4024ed5 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect

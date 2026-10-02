@@ -87,7 +87,10 @@ func (oc *OLXConnector) Start(ctx context.Context) (err error) {
 	if wwwProxy == "" {
 		wwwProxy = oc.Config.Proxy
 	}
-	oc.wwwClient, err = newHTTPClient(wwwProxy, true)
+	// www.olx.pl is behind AWS WAF, which 403s non-browser HTTP/2 fingerprints.
+	// Give the www client a real Chrome TLS+HTTP/2 fingerprint (see browserfp.go)
+	// rather than falling back to HTTP/1.1.
+	oc.wwwClient, err = newBrowserHTTPClient(wwwProxy)
 	if err != nil {
 		return fmt.Errorf("www_proxy: %w", err)
 	}
