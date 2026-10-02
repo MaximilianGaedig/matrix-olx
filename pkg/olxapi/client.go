@@ -65,13 +65,19 @@ type Config struct {
 	NegotiationURL string
 	ModerationURL  string
 	SiteCode       string
-	ClientVersion  string
-	Platform       string
-	Language       string
-	WWWLanguage    string
-	UserAgent      string
-	DeviceID       string
-	Auth           AuthConfig
+	// ClientVersion pins the web app release the bridge reports. Left empty,
+	// the release is the site's current one as far as Live knows it, and the
+	// one the bridge was built against otherwise.
+	ClientVersion string
+	// Live returns the site's own current configuration, or nil while it is
+	// not known.
+	Live        func() *WebConfig
+	Platform    string
+	Language    string
+	WWWLanguage string
+	UserAgent   string
+	DeviceID    string
+	Auth        AuthConfig
 }
 
 func (c *Config) setDefaults() {
@@ -90,7 +96,6 @@ func (c *Config) setDefaults() {
 	def(&c.NegotiationURL, c.Site.negotiationURL())
 	def(&c.ModerationURL, DefaultModerationURL)
 	def(&c.SiteCode, c.Site.SiteCode)
-	def(&c.ClientVersion, DefaultClientVersion)
 	def(&c.Platform, DefaultPlatform)
 	def(&c.Language, c.Site.Language)
 	def(&c.WWWLanguage, c.Site.WWWLanguage)
@@ -264,7 +269,7 @@ func (c *Client) doOnce(ctx context.Context, req request, token string, out any)
 	} else if httpReq.Header.Set("X-Client", c.cfg.Platform); req.www {
 		httpReq.Header.Set("Accept-Language", c.cfg.WWWLanguage)
 		httpReq.Header.Set("X-Platform-Type", "mobile-html5")
-		httpReq.Header.Set("Version", wwwAPIVersion)
+		httpReq.Header.Set("Version", c.wwwAPIVersion())
 		if c.cfg.DeviceID != "" {
 			httpReq.Header.Set("X-Device-Id", c.cfg.DeviceID)
 		}
@@ -273,7 +278,7 @@ func (c *Client) doOnce(ctx context.Context, req request, token string, out any)
 		httpReq.Header.Set("Accept-Language", c.cfg.Language)
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("X-Site-Code", c.cfg.SiteCode)
-		httpReq.Header.Set("X-Client-Version", c.cfg.ClientVersion)
+		httpReq.Header.Set("X-Client-Version", c.ClientVersion())
 		setBrowserHeaders(httpReq.Header, c.cfg.UserAgent, c.cfg.Site.Origin(), siteSameSite, req.method)
 	}
 	for key, value := range req.headers {
@@ -640,8 +645,35 @@ func (c *Client) Download(ctx context.Context, fileURL string, maxSize int64) ([
 	return data, resp.Header.Get("Content-Type"), nil
 }
 
-// wwwAPIVersion is the version of its own API the website asks www.olx.pl for.
-const wwwAPIVersion = "v1.19"
+// DefaultWWWAPIVersion is the version of its own API the website asked
+// www.olx.pl for when the bridge was built.
+const DefaultWWWAPIVersion = "v1.19"
+
+func (c *Client) live() *WebConfig {
+	if c.cfg.Live == nil {
+		return nil
+	}
+	return c.cfg.Live()
+}
+
+// ClientVersion is the web app release the client reports: the pinned one,
+// else the site's current one, else the one the bridge was built against.
+func (c *Client) ClientVersion() string {
+	if c.cfg.ClientVersion != "" {
+		return c.cfg.ClientVersion
+	}
+	if live := c.live(); live != nil && live.Version != "" {
+		return live.Version
+	}
+	return DefaultClientVersion
+}
+
+func (c *Client) wwwAPIVersion() string {
+	if live := c.live(); live != nil && live.APIVersion != "" {
+		return live.APIVersion
+	}
+	return DefaultWWWAPIVersion
+}
 
 // MaxUsersPerRequest is how many profiles OLX lets one request ask for; more
 // is answered with a validation error.

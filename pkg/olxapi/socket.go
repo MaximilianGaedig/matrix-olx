@@ -60,7 +60,7 @@ type SocketHandler interface {
 func (c *Client) socketProtocols(token string) []string {
 	return []string{
 		url.QueryEscape("X-Client=" + c.cfg.Platform),
-		url.QueryEscape("X-Client-Version=" + c.cfg.ClientVersion),
+		url.QueryEscape("X-Client-Version=" + c.ClientVersion()),
 		url.QueryEscape("access_token=" + token),
 	}
 }

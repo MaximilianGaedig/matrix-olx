@@ -46,6 +46,8 @@ type OLXConnector struct {
 
 	httpClient *http.Client
 	wwwClient  *http.Client
+
+	sites siteStates
 }
 
 var (
@@ -94,6 +96,11 @@ func (oc *OLXConnector) Start(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("www_proxy: %w", err)
 	}
+	// Start reading the configured sites' web app configuration right away,
+	// so that it is known by the time someone logs in.
+	for _, site := range oc.loginSites() {
+		oc.liveConfig(site)
+	}
 	if oc.Config.Presence.Enabled {
 		oc.presence = presence.NewManager(presence.Config{}, presence.GhostSender(oc.Bridge))
 		oc.seen = presence.NewSeenReporter(presence.GhostSeenSender(oc.Bridge))
@@ -117,6 +124,7 @@ func (oc *OLXConnector) apiConfig(deviceID string, site olxapi.Site) olxapi.Conf
 	return olxapi.Config{
 		Site:          site,
 		ClientVersion: oc.Config.ClientVersion,
+		Live:          oc.liveConfig(site),
 		UserAgent:     oc.userAgent(),
 		DeviceID:      deviceID,
 	}

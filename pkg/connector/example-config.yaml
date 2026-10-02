@@ -19,9 +19,8 @@ sites:
 # is what OLX's web app runs in; the browser headers that go with it (client hints, fetch
 # metadata, origin) are derived from it. Set it to your own browser's to match that instead.
 user_agent:
-# The version the bridge reports as its web client version (X-Client-Version). Empty means the
-# version of OLX's web app the bridge was built against; the current one is in the
-# <meta name="version"> tag of the site's home page.
+# The release of OLX's web app the bridge reports itself as (X-Client-Version). Empty means the
+# site's current one, which the bridge reads from the site's front page every few hours.
 client_version:
 # An HTTP or SOCKS5 proxy for everything the bridge sends to OLX.
 proxy:

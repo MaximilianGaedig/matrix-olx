@@ -899,3 +899,80 @@ func TestClosedQuestion(t *testing.T) {
 		t.Errorf("answer to another service: %s %v", req.URL.Path, req.Header)
 	}
 }
+
+func TestWebConfig(t *testing.T) {
+	inner := `{"appConfig":{"siteCode":"olxpl","authConfig":{"cognito":{"host":"login.olx.pl","client_id":"new-client"},"auth0":{"host":"auth.olx.pl","client_id":"other"}},` +
+		`"atlasAuthConfig":{"apiVersion":"v1.20","moderationAPIUrl":"https://content.css.olx.io/api/v1/"},` +
+		`"chatApiConfig":{"api":{"classifieds":"https://api.classifieds.chat.olx.pl","core":"https://api.chat.olx.pl"},"ws":{"url":"wss://ws.chat.olx.pl"}}}}`
+	literal, _ := json.Marshal(inner)
+	page := `<!doctype html><html><head><meta charset="utf-8"/><meta name="version" content="f09f5710_10127260"/></head><body>` +
+		`<script type="text/javascript" id="olx-init-config">
+        window.__INIT_CONFIG__ = ` + string(literal) + `;
+        window.__FEATURE_FLAGS__ = ["a"];</script></body></html>`
+	cfg, err := ParseWebConfig([]byte(page))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := WebConfig{Version: "f09f5710_10127260", APIVersion: "v1.20", ChatURL: "https://api.chat.olx.pl", SocketURL: "wss://ws.chat.olx.pl",
+		ModerationURL: "https://content.css.olx.io/api/v1", AuthHost: "https://login.olx.pl", ClientID: "new-client"}
+	if *cfg != want {
+		t.Errorf("config = %+v", *cfg)
+	}
+	// Only what the bridge has built in differently is drift.
+	drift := MustSite("pl").Drift(cfg)
+	if len(drift) != 1 || !strings.Contains(drift[0], "new-client") || !strings.Contains(drift[0], MustSite("pl").ClientID) {
+		t.Errorf("drift = %q", drift)
+	}
+	if MustSite("pl").Drift(nil) != nil || len(MustSite("pl").Drift(&WebConfig{Version: "x"})) != 0 {
+		t.Error("an unknown value is not a changed one")
+	}
+	// A page with only the release still gives the release; one with neither is an error.
+	if cfg, err = ParseWebConfig([]byte(`<meta name="version" content="abc_1"/> window.__INIT_CONFIG__ = "not json";`)); err != nil || cfg.Version != "abc_1" || cfg.ClientID != "" {
+		t.Errorf("release only: %+v, %v", cfg, err)
+	}
+	if _, err = ParseWebConfig([]byte(`<html><h1>403 ERROR</h1></html>`)); !errors.Is(err, ErrNoWebConfig) {
+		t.Errorf("an error page has no config, got %v", err)
+	}
+	if cfg, _ = ParseWebConfig([]byte(`<meta name="version" content="abc_1"/> window.__INIT_CONFIG__ = "{\"appConfig\":{\"atlasAuthConfig\":{\"apiVersion\":\"<script>\"}}}";`)); cfg.APIVersion != "" {
+		t.Errorf("an API version that is not one must not reach a header: %q", cfg.APIVersion)
+	}
+
+	// The client reports the pinned release, else the live one, else the built-in.
+	f := newFakeOLX(t)
+	var live atomic.Pointer[WebConfig]
+	client := func(pinned string) *Client {
+		c := f.client(Tokens{RefreshToken: "good-refresh"})
+		c.cfg.ClientVersion, c.cfg.Live = pinned, live.Load
+		return c
+	}
+	c := client("")
+	if c.ClientVersion() != DefaultClientVersion || c.wwwAPIVersion() != DefaultWWWAPIVersion {
+		t.Errorf("before the site was read: %s %s", c.ClientVersion(), c.wwwAPIVersion())
+	}
+	live.Store(&want)
+	if c.ClientVersion() != want.Version || c.wwwAPIVersion() != "v1.20" || client("pinned_1").ClientVersion() != "pinned_1" {
+		t.Errorf("after: %s %s %s", c.ClientVersion(), c.wwwAPIVersion(), client("pinned_1").ClientVersion())
+	}
+	if _, _, err = c.ListConversations(context.Background(), ListParams{}); err != nil {
+		t.Fatal(err)
+	}
+	if req, _ := f.lastRequest(); req.Header.Get("X-Client-Version") != want.Version {
+		t.Errorf("X-Client-Version = %q", req.Header.Get("X-Client-Version"))
+	}
+
+	// Fetching reads the front page with the bridge's User-Agent.
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" || r.Header.Get("User-Agent") != testUA || r.Header.Get("Accept-Language") != "pl-PL, pl" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_, _ = io.WriteString(w, page)
+	}))
+	t.Cleanup(site.Close)
+	if cfg, err = FetchWebConfig(context.Background(), site.Client(), site.URL, testUA, "pl-PL, pl"); err != nil || *cfg != want {
+		t.Errorf("fetched %+v, %v", cfg, err)
+	}
+	if _, err = FetchWebConfig(context.Background(), site.Client(), site.URL, "curl/8", ""); err == nil {
+		t.Error("a refused page must be an error")
+	}
+}
