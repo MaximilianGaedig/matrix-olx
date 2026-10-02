@@ -49,7 +49,6 @@ type Config struct {
 	RoomNameTemplate    string `yaml:"room_name_template"`
 
 	Sites         []string `yaml:"sites"`
-	Icon          string   `yaml:"icon"`
 	UserAgent     string   `yaml:"user_agent"`
 	ClientVersion string   `yaml:"client_version"`
 	Proxy         string   `yaml:"proxy"`
@@ -141,7 +140,6 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "displayname_template")
 	helper.Copy(up.Str, "room_name_template")
 	helper.Copy(up.List, "sites")
-	helper.Copy(up.Str|up.Null, "icon")
 	helper.Copy(up.Str|up.Null, "user_agent")
 	helper.Copy(up.Str, "client_version")
 	helper.Copy(up.Str|up.Null, "proxy")

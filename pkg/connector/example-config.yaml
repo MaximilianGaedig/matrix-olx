@@ -15,11 +15,6 @@ room_name_template: "{{.Name}} · {{.Title}}"
 sites:
     - pl
 
-# OLX's logo as an mxc:// URI, which clients show next to bridged rooms. The bridge ships no
-# logo of its own: upload one to your homeserver and name it here (the bridge bot's own picture
-# is appservice.bot.avatar). Empty means no icon.
-icon:
-
 # The User-Agent to send to OLX. Empty means that of current desktop Chrome on Linux, which
 # is what OLX's web app runs in; the browser headers that go with it (client hints, fetch
 # metadata, origin) are derived from it. Set it to your own browser's to match that instead.

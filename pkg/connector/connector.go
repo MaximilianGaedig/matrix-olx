@@ -29,7 +29,6 @@ import (
 	"maunium.net/go/mautrix/bridgev2/commands"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/id"
 
 	"github.com/MaximilianGaedig/mautrix-olx/pkg/olxapi"
 	"github.com/MaximilianGaedig/mautrix-olx/pkg/presence"
@@ -124,7 +123,7 @@ func (oc *OLXConnector) GetName() bridgev2.BridgeName {
 	return bridgev2.BridgeName{
 		DisplayName:      "OLX",
 		NetworkURL:       "https://www.olx.com",
-		NetworkIcon:      id.ContentURIString(oc.Config.Icon),
+		NetworkIcon:      "mxc://maximiliangaedig.com/d12qMg90lGPcR6xOWPJ5UhS0E8g4PHzN",
 		NetworkID:        "olx",
 		BeeperBridgeType: "github.com/MaximilianGaedig/mautrix-olx",
 		DefaultPort:      29341,
