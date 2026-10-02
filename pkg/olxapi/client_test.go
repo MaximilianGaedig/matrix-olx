@@ -825,3 +825,77 @@ func TestReport(t *testing.T) {
 		t.Errorf("report: %s %s %s", req.Method, req.URL.Path, body)
 	}
 }
+
+func TestClosedQuestion(t *testing.T) {
+	f := newFakeOLX(t)
+	c := f.client(Tokens{RefreshToken: "good-refresh"})
+	ctx := context.Background()
+
+	extras := func(destination string) json.RawMessage {
+		return json.RawMessage(`{"question_id":"deal-done","text":"Udało się sprzedać?","detailed_text":"Pomoże nam to ulepszyć OLX","visibility_privacy_note_text":"Widoczne tylko dla Ciebie",
+			"destination":"` + destination + `","options":[{"option_id":1,"text":"Tak","value":true},{"option_id":"no","text":"Nie"},null,{"text":"without an id"}]}`)
+	}
+	msg := &Message{ID: "m-q", Type: MessageTypeClosedQuestion, Extras: extras(f.server.URL + "/api/questions/answers")}
+	question, ok := ParseQuestionExtras(msg)
+	if !ok || len(question.Options) != 2 || question.Text != "Udało się sprzedać?" || question.PrivacyNote != "Widoczne tylko dla Ciebie" {
+		t.Fatalf("question = %+v, %v", question, ok)
+	}
+	yes, no := question.Option("1"), question.Option(" nie ")
+	if yes == nil || yes.Text != "Tak" || no == nil || no.Key() != "no" || question.Option("maybe") != nil {
+		t.Fatalf("options by ID and by text: %+v, %+v", yes, no)
+	}
+	for _, bad := range []*Message{
+		nil,
+		{Type: "standard", Extras: msg.Extras},
+		{Type: MessageTypeClosedQuestion},
+		{Type: MessageTypeClosedQuestion, Extras: json.RawMessage(`{"text":"q","options":[{"option_id":1,"text":"a"}]}`)},
+		{Type: MessageTypeClosedQuestion, Extras: json.RawMessage(`{"text":"q","destination":"https://x.example/a","options":[]}`)},
+	} {
+		if _, ok = ParseQuestionExtras(bad); ok {
+			t.Errorf("%+v is not a question that can be answered", bad)
+		}
+	}
+
+	// An answer for the chat API: with the token, and every value as OLX sent it.
+	if err := c.AnswerQuestion(ctx, "c1", msg.ID, question, yes); err != nil {
+		t.Fatal(err)
+	}
+	req, body := f.lastRequest()
+	if req.Method != http.MethodPost || req.URL.Path != "/api/questions/answers" || !strings.HasPrefix(req.Header.Get("Authorization"), "Bearer ") {
+		t.Errorf("answer: %s %s %v", req.Method, req.URL.Path, req.Header)
+	}
+	if body != `{"conversation_id":"c1","message_id":"m-q","question_id":"deal-done","option_id":1,"value":true}` {
+		t.Errorf("answer body = %s", body)
+	}
+	if err := c.AnswerQuestion(ctx, "c1", msg.ID, question, no); err != nil {
+		t.Fatal(err)
+	}
+	if _, body = f.lastRequest(); body != `{"conversation_id":"c1","message_id":"m-q","question_id":"deal-done","option_id":"no"}` {
+		t.Errorf("an option without a value sends none: %s", body)
+	}
+
+	// An answer for somewhere else never carries the token, and only goes over https.
+	before := len(f.requests)
+	elsewhere, _ := ParseQuestionExtras(&Message{Type: MessageTypeClosedQuestion, Extras: extras("http://elsewhere.example/answers")})
+	if err := c.AnswerQuestion(ctx, "c1", msg.ID, elsewhere, elsewhere.Options[0]); !errors.Is(err, ErrQuestionDestination) {
+		t.Errorf("a plain http address must be refused, got %v", err)
+	}
+	if len(f.requests) != before {
+		t.Error("a refused answer must not be sent")
+	}
+	var got *http.Request
+	other := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(other.Close)
+	c.HTTP = other.Client()
+	away, _ := ParseQuestionExtras(&Message{Type: MessageTypeClosedQuestion, Extras: extras(other.URL + "/survey")})
+	if err := c.AnswerQuestion(ctx, "c1", msg.ID, away, away.Options[0]); err != nil {
+		t.Fatal(err)
+	}
+	req = got
+	if req.URL.Path != "/survey" || req.Header.Get("Authorization") != "" || req.Header.Get("X-Site-Code") != "olxpl" || req.Header.Get("X-Client") != "" {
+		t.Errorf("answer to another service: %s %v", req.URL.Path, req.Header)
+	}
+}

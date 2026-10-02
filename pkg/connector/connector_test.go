@@ -132,6 +132,7 @@ func TestAdTopic(t *testing.T) {
 func TestSystemText(t *testing.T) {
 	for _, tc := range []struct{ typ, extras, text, want string }{
 		{"system", `{"text":"Rozmowa została zakończona","initiated_at":"2026-10-02T09:00:00Z"}`, "", "Rozmowa została zakończona"},
+		// A question without answers to offer stays a plain notice.
 		{"custom:single_closed_question", `{"question_id":"q","text":"Czy przedmiot dotarł?","detailed_text":"Odpowiedz w aplikacji"}`, "", "Czy przedmiot dotarł?\nOdpowiedz w aplikacji"},
 		{"custom:price_negotiation_widget_buyer_proposed", `{"proposal":{"price":{"cents":150000,"currency":"PLN"}}}`, "", "Price proposal from the buyer: 1 500 zł"},
 		{"custom:price_negotiation_widget_seller_accepted", `{}`, "", "The seller accepted the proposed price"},
@@ -473,5 +474,63 @@ func TestPolledPresence(t *testing.T) {
 	}
 	if !lastActive(&olxapi.User{}).IsZero() {
 		t.Error("no times, no activity")
+	}
+}
+
+func TestClosedQuestion(t *testing.T) {
+	question := func(id, at, options string) *olxapi.Message {
+		created, err := time.Parse(time.RFC3339, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &olxapi.Message{ID: id, Type: olxapi.MessageTypeClosedQuestion, CreatedAt: olxapi.Time{Time: created},
+			Extras: json.RawMessage(`{"question_id":"q","text":"Udało się sprzedać?","detailed_text":"Pomoże nam to ulepszyć OLX","destination":"https://api.chat.olx.pl/api/answers","options":` + options + `}`)}
+	}
+	two := question("m-two", "2026-10-02T10:00:00Z", `[{"option_id":1,"text":"Tak","value":true},{"option_id":"no","text":"Nie"}]`)
+	three := question("m-three", "2026-10-02T11:00:00Z", `[{"option_id":"a","text":"Tak, na OLX"},{"option_id":"b","text":"Tak, gdzie indziej"},{"option_id":"c","text":"Nie"}]`)
+
+	extras, ok := olxapi.ParseQuestionExtras(two)
+	if !ok {
+		t.Fatal("extras did not parse")
+	}
+	want := "Udało się sprzedać?\nPomoże nam to ulepszyć OLX\nOnly visible to you.\nAnswers: Tak, Nie\nTo answer: `!olx answer <answer>`"
+	if got := questionText(extras, "!olx"); got != want {
+		t.Errorf("text = %q", got)
+	}
+	// Two answers side by side, in the format clients render for the Telegram bridge's keyboards.
+	raw, err := json.Marshal(questionButtons(two.ID, extras, "!olx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantButtons := `{"message_id":0,"keyboard":"inline","rows":[[` +
+		`{"text":"Tak","type":"callback","command":"!olx answer m-two 1"},` +
+		`{"text":"Nie","type":"callback","command":"!olx answer m-two no"}]]}`
+	if string(raw) != wantButtons {
+		t.Errorf("buttons = %s", raw)
+	}
+	// More than two go one under another, as on OLX.
+	threeExtras, _ := olxapi.ParseQuestionExtras(three)
+	if rows := questionButtons(three.ID, threeExtras, "!olx").Rows; len(rows) != 3 || len(rows[0]) != 1 {
+		t.Errorf("three answers = %+v", rows)
+	}
+
+	chat := []*olxapi.Message{
+		two,
+		{ID: "m-text", Text: "hej", CreatedAt: olxapi.Time{Time: three.CreatedAt.Add(time.Hour)}},
+		three,
+	}
+	// A button names its question, however old.
+	if msg, q, name := pickQuestion(chat, []string{"m-two", "no"}); msg != two || q == nil || q.Option(name) == nil || q.Option(name).Text != "Nie" {
+		t.Errorf("button answer picked %+v %q", msg, name)
+	}
+	// A typed answer is for the newest question, by the answer's words.
+	if msg, q, name := pickQuestion(chat, []string{"tak,", "gdzie", "indziej"}); msg != three || q.Option(name) == nil || q.Option(name).Key() != "b" {
+		t.Errorf("typed answer picked %+v %q", msg, name)
+	}
+	if msg, _, name := pickQuestion(chat, nil); msg != three || name != "" {
+		t.Errorf("no answer named: %+v %q", msg, name)
+	}
+	if msg, q, _ := pickQuestion(chat[1:2], []string{"Tak"}); msg != nil || q != nil {
+		t.Errorf("a chat without questions has none to answer, got %+v", msg)
 	}
 }

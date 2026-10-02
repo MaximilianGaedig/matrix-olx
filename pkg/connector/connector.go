@@ -97,7 +97,7 @@ func (oc *OLXConnector) Start(ctx context.Context) (err error) {
 		go oc.presence.Run(oc.Bridge.BackgroundCtx)
 		go oc.seen.Run(oc.Bridge.BackgroundCtx)
 	}
-	oc.Bridge.Commands.(*commands.Processor).AddHandlers(cmdMessageAd, cmdOffer, cmdAcceptOffer, cmdReport)
+	oc.Bridge.Commands.(*commands.Processor).AddHandlers(cmdMessageAd, cmdOffer, cmdAcceptOffer, cmdAnswer, cmdReport)
 	return nil
 }
 

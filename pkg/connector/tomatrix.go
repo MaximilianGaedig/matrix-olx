@@ -168,6 +168,9 @@ func (c *OLXClient) convertMessage(ctx context.Context, portal *bridgev2.Portal,
 	if extras, ok := olxapi.ParseNegotiationExtras(msg); ok {
 		return c.convertNegotiation(ctx, msg, extras), nil
 	}
+	if question, ok := olxapi.ParseQuestionExtras(msg); ok {
+		return c.convertQuestion(msg, question), nil
+	}
 	converted := &bridgev2.ConvertedMessage{}
 	text := msg.Text
 	msgType := event.MsgText

@@ -21,7 +21,8 @@ place, state and link in the topic.
 | Documents (PDF, Word, Excel) | ✓ | ✓ |
 | Captions | ✓ | ✓ |
 | Price proposals | ✓ with their state and an Accept button | ✓ (`offer`, `accept-offer`, or the button) |
-| System messages and OLX's questions | ✓ as notices | – |
+| OLX's own questions with fixed answers | ✓ with a button per answer | ✓ (`answer`, or the button) |
+| System messages | ✓ as notices | – |
 | Reporting someone to OLX | | ✓ (`report`) |
 | Typing notifications | ✓ | ✓ |
 | Read receipts | ✓ | ✓ |
@@ -78,6 +79,9 @@ Besides the standard bridge commands (`login`, `logout`, `sync-chats`, `delete-p
   proposal with another price. OLX's limits for the ad apply and are told when a price is outside them.
 - `accept-offer` – in a chat's room: accept the proposal that is waiting. The Accept button under a
   proposal sends this for exactly that proposal.
+- `answer <answer>` – in a chat's room: answer the question OLX asked there ("Did you sell it?"),
+  by the answer's words. The buttons under a question send this for exactly that question. Only you
+  see these questions; the answer goes to OLX, not to the other person.
 - `report [reason] [description]` – in a chat's room: report the other person to OLX's moderators.
   Without a reason it lists the ones OLX offers. There is deliberately no button for this.
 - `start-chat <ad ID or address>` – open the room of the chat you have about an ad.

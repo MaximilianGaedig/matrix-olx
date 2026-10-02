@@ -281,3 +281,112 @@ func (c *Client) ReportChat(ctx context.Context, report *Report) error {
 		external: true,
 	}, nil)
 }
+
+// Closed questions: OLX itself asks one of the two people something with a
+// fixed set of answers ("Did you make the deal?"). Only the person asked sees
+// the question. The message carries the answers and the address the chosen
+// one is posted to; OLX keeps no record the web app could read back of what
+// was answered, so a question can be answered again with another option.
+
+const MessageTypeClosedQuestion = "custom:single_closed_question"
+
+// QuestionOption is one of the answers to a closed question.
+type QuestionOption struct {
+	// ID and Value are sent back exactly as OLX sent them.
+	ID    json.RawMessage `json:"option_id"`
+	Text  string          `json:"text"`
+	Value json.RawMessage `json:"value,omitempty"`
+}
+
+// Key is the option's ID as plain text, to name the option by.
+func (o *QuestionOption) Key() string {
+	var s string
+	if json.Unmarshal(o.ID, &s) == nil {
+		return s
+	}
+	return strings.TrimSpace(string(o.ID))
+}
+
+// QuestionExtras is what a closed question message carries.
+type QuestionExtras struct {
+	QuestionID   json.RawMessage   `json:"question_id"`
+	Text         string            `json:"text"`
+	DetailedText string            `json:"detailed_text"`
+	PrivacyNote  string            `json:"visibility_privacy_note_text"`
+	Destination  string            `json:"destination"`
+	Options      []*QuestionOption `json:"options"`
+}
+
+// ParseQuestionExtras reads the extras of a closed question that can be
+// answered: one with answers and somewhere to send them.
+func ParseQuestionExtras(msg *Message) (*QuestionExtras, bool) {
+	if msg == nil || msg.Type != MessageTypeClosedQuestion || len(msg.Extras) == 0 {
+		return nil, false
+	}
+	var extras QuestionExtras
+	if err := json.Unmarshal(msg.Extras, &extras); err != nil || extras.Destination == "" {
+		return nil, false
+	}
+	options := extras.Options[:0]
+	for _, option := range extras.Options {
+		if option != nil && option.Key() != "" {
+			options = append(options, option)
+		}
+	}
+	extras.Options = options
+	return &extras, len(options) > 0
+}
+
+// Option finds an answer by its ID or, failing that, by its text.
+func (q *QuestionExtras) Option(name string) *QuestionOption {
+	name = strings.TrimSpace(name)
+	for _, option := range q.Options {
+		if option.Key() == name {
+			return option
+		}
+	}
+	for _, option := range q.Options {
+		if strings.EqualFold(strings.TrimSpace(option.Text), name) {
+			return option
+		}
+	}
+	return nil
+}
+
+type questionAnswer struct {
+	ConversationID string          `json:"conversation_id"`
+	MessageID      string          `json:"message_id"`
+	QuestionID     json.RawMessage `json:"question_id,omitempty"`
+	OptionID       json.RawMessage `json:"option_id"`
+	Value          json.RawMessage `json:"value,omitempty"`
+}
+
+// ErrQuestionDestination is a question whose answers go somewhere the bridge
+// won't post to.
+var ErrQuestionDestination = errors.New("the question's answer address is not an https address")
+
+// AnswerQuestion sends the chosen answer to a closed question. As in the web
+// app, the login's token goes along only when the answer is for the chat API
+// itself.
+func (c *Client) AnswerQuestion(ctx context.Context, conversationID, messageID string, question *QuestionExtras, option *QuestionOption) error {
+	req := request{
+		method: http.MethodPost,
+		url:    question.Destination,
+		body: &questionAnswer{
+			ConversationID: conversationID,
+			MessageID:      messageID,
+			QuestionID:     question.QuestionID,
+			OptionID:       option.ID,
+			Value:          option.Value,
+		},
+	}
+	if !strings.HasPrefix(question.Destination, strings.TrimSuffix(c.cfg.ChatURL, "/")+"/") {
+		if !strings.HasPrefix(question.Destination, "https://") {
+			return ErrQuestionDestination
+		}
+		req.external = true
+		req.noToken = true
+		req.headers = map[string]string{"X-Site-Code": c.cfg.SiteCode}
+	}
+	return c.do(ctx, req, nil)
+}

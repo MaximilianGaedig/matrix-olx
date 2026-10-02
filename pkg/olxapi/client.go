@@ -40,7 +40,7 @@ import (
 const (
 	DefaultUploadURL     = "https://ireland.apollo.olxcdn.com/v1/temp-files"
 	DefaultModerationURL = "https://content.css.olx.io/api/v1"
-	DefaultClientVersion = "b86050d0_10123458"
+	DefaultClientVersion = "f09f5710_10127260"
 	DefaultPlatform      = "DESKTOP"
 
 	// MaxPageSize is the largest conversation list page the website asks for.
@@ -216,6 +216,9 @@ type request struct {
 	// domain (price negotiation, moderation): cross-site to the web app, and
 	// without the chat API's client headers.
 	external bool
+	// noToken leaves the login's token out: for addresses that are not OLX's
+	// own API.
+	noToken bool
 }
 
 func (c *Client) do(ctx context.Context, req request, out any) error {
@@ -251,7 +254,9 @@ func (c *Client) doOnce(ctx context.Context, req request, token string, out any)
 	if err != nil {
 		return err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+token)
+	if !req.noToken {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
 	if req.external {
 		httpReq.Header.Set("Accept-Language", c.cfg.Language)
 		httpReq.Header.Set("Content-Type", "application/json")
