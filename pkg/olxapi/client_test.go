@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -151,11 +152,9 @@ func (f *fakeOLX) handleSocket(w http.ResponseWriter, r *http.Request) {
 	f.socketOrigin = r.Header.Get("Origin")
 	valid := f.validToken
 	f.lock.Unlock()
-	// Like OLX's gateway: the list is taken apart at ", " and the token must
-	// be one of its items, or the handshake is refused.
 	authorized := false
-	for _, protocol := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ", ") {
-		if protocol == url.QueryEscape("access_token="+valid) {
+	for _, protocol := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
+		if strings.TrimSpace(protocol) == url.QueryEscape("access_token="+valid) {
 			authorized = true
 		}
 	}
@@ -662,5 +661,53 @@ func TestSites(t *testing.T) {
 	if !strings.HasPrefix(authorize, "https://login.olx.ro/oauth2/authorize?") || !strings.Contains(authorize, "client_id=7gantjdsv7233vniq4dthhm2hh") ||
 		!strings.Contains(authorize, url.QueryEscape("https://www.olx.ro/d/callback/")) {
 		t.Errorf("authorize URL for olx.ro: %s", authorize)
+	}
+}
+
+// OLX's gateway only finds the token under the exact header name browsers use.
+// A Go HTTP server cannot tell (it normalizes names as it reads them), so this
+// looks at the bytes on the wire.
+func TestSocketHandshakeOnTheWire(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	got := make(chan string, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 16384)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		n, _ := conn.Read(buf)
+		got <- string(buf[:n])
+	}()
+	c := NewClient(Config{SocketURL: "ws://" + ln.Addr().String()},
+		Tokens{IDToken: "TOKEN.abc-def_ghi", RefreshToken: "r", Expiry: time.Now().Add(time.Hour)}, nil, nil, zerolog.Nop())
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	go func() { _, _ = c.dialSocket(ctx) }()
+	var raw string
+	select {
+	case raw = <-got:
+	case <-ctx.Done():
+		t.Fatal("no handshake arrived")
+	}
+	for _, want := range []string{
+		"GET / HTTP/1.1\r\n",
+		"\r\nSec-WebSocket-Protocol: X-Client%3DDESKTOP, X-Client-Version%3D" + DefaultClientVersion + ", access_token%3DTOKEN.abc-def_ghi\r\n",
+		"\r\nSec-WebSocket-Key: ",
+		"\r\nSec-WebSocket-Version: 13\r\n",
+		"\r\nOrigin: https://www.olx.pl\r\n",
+	} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("handshake lacks %q:\n%s", want, raw)
+		}
+	}
+	if strings.Contains(raw, "Sec-Websocket-") {
+		t.Errorf("handshake headers must not be in Go's canonical spelling:\n%s", raw)
 	}
 }

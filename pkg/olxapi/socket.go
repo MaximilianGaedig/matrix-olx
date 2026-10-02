@@ -65,28 +65,48 @@ func (c *Client) socketProtocols(token string) []string {
 	}
 }
 
-// browserProtocolList writes the WebSocket subprotocol list the way browsers
-// do, "a, b, c". The WebSocket library writes "a,b,c", which is just as valid,
-// but OLX's gateway takes the list apart at ", " and then does not find the
-// token in it: the same handshake is answered 403 instead of 101.
-type browserProtocolList struct {
+// webSocketHeaders are the handshake headers in the spelling browsers (and the
+// RFC) use. Go writes header names in its canonical form, "Sec-Websocket-…"
+// with a small s, which is the same header to anything that follows HTTP. But
+// OLX's gateway looks the token up under the exact name
+// "Sec-WebSocket-Protocol" and refuses the handshake (403) when it is spelled
+// any other way.
+var webSocketHeaders = []string{
+	"Sec-WebSocket-Protocol",
+	"Sec-WebSocket-Key",
+	"Sec-WebSocket-Version",
+	"Sec-WebSocket-Extensions",
+}
+
+// exactWebSocketHeaders sends the WebSocket handshake headers under their
+// exact names, and the subprotocol list as browsers write it ("a, b, c").
+type exactWebSocketHeaders struct {
 	base http.RoundTripper
 }
 
-func (b browserProtocolList) RoundTrip(req *http.Request) (*http.Response, error) {
-	if protocols := req.Header.Values("Sec-WebSocket-Protocol"); len(protocols) > 0 {
-		var all []string
-		for _, value := range protocols {
-			for _, protocol := range strings.Split(value, ",") {
-				if protocol = strings.TrimSpace(protocol); protocol != "" {
-					all = append(all, protocol)
+func (e exactWebSocketHeaders) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	for _, name := range webSocketHeaders {
+		values := req.Header.Values(name)
+		if len(values) == 0 {
+			continue
+		}
+		if name == "Sec-WebSocket-Protocol" {
+			var protocols []string
+			for _, value := range values {
+				for _, protocol := range strings.Split(value, ",") {
+					if protocol = strings.TrimSpace(protocol); protocol != "" {
+						protocols = append(protocols, protocol)
+					}
 				}
 			}
+			values = []string{strings.Join(protocols, ", ")}
 		}
-		req = req.Clone(req.Context())
-		req.Header.Set("Sec-WebSocket-Protocol", strings.Join(all, ", "))
+		req.Header.Del(name)
+		// Assigned directly: Set would put the name back into canonical form.
+		req.Header[name] = values
 	}
-	base := b.base
+	base := e.base
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -111,7 +131,7 @@ func (c *Client) dialSocket(ctx context.Context) (*websocket.Conn, error) {
 		header.Set("Pragma", "no-cache")
 	}
 	conn, _, err := websocket.Dial(dialCtx, c.cfg.SocketURL, &websocket.DialOptions{
-		HTTPClient:   &http.Client{Transport: browserProtocolList{c.HTTP.Transport}},
+		HTTPClient:   &http.Client{Transport: exactWebSocketHeaders{c.HTTP.Transport}},
 		HTTPHeader:   header,
 		Subprotocols: c.socketProtocols(token),
 	})
