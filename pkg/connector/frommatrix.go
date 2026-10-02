@@ -270,5 +270,11 @@ func (c *OLXClient) HandleMatrixBlock(ctx context.Context, ghost *bridgev2.Ghost
 	if !c.Main.ValidateUserID(ghost.ID) {
 		return fmt.Errorf("can't block %s: not an OLX user", ghost.ID)
 	}
-	return c.checkErr(c.API.SetBlocked(ctx, string(ghost.ID), blocked))
+	if err := c.API.SetBlocked(ctx, string(ghost.ID), blocked); err != nil {
+		return c.checkErr(err)
+	}
+	c.stateLock.Lock()
+	c.blocked[string(ghost.ID)] = blocked
+	c.stateLock.Unlock()
+	return nil
 }

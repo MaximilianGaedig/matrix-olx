@@ -327,3 +327,27 @@ func TestConfigUpgrade(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockChange(t *testing.T) {
+	known := map[string]bool{}
+	steps := []struct {
+		blocked    bool
+		change, to bool
+		why        string
+	}{
+		{false, false, false, "never blocked on OLX: the ignore list is not touched"},
+		{true, true, true, "blocked on OLX: ignore"},
+		{true, false, false, "still blocked: nothing to do"},
+		{false, true, false, "unblocked on OLX after the bridge saw the block: unignore"},
+		{false, false, false, "still not blocked: nothing to do"},
+	}
+	for _, step := range steps {
+		change, to := blockChange(known, "u", step.blocked)
+		if change != step.change || to != step.to {
+			t.Errorf("%s: got change=%v to=%v", step.why, change, to)
+		}
+	}
+	if change, to := blockChange(map[string]bool{}, "new", true); !change || !to {
+		t.Error("someone first seen blocked is ignored")
+	}
+}

@@ -129,6 +129,7 @@ func (c *OLXClient) queueResync(ctx context.Context, conv *olxapi.Conversation) 
 		evt.LatestMessageTS = latest.CreatedAt.Time
 	}
 	c.UserLogin.QueueRemoteEvent(evt)
+	c.syncBlock(ctx, conv)
 	if latest == nil {
 		return
 	}

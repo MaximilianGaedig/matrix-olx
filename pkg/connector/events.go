@@ -279,7 +279,44 @@ func (c *OLXClient) handleBlock(ctx context.Context, data *olxapi.EventData, blo
 	if data.BlockedUserUUID == "" {
 		return
 	}
-	if err := c.UserLogin.SetGhostBlocked(ctx, MakeUserID(data.BlockedUserUUID), blocked); err != nil {
+	c.stateLock.Lock()
+	c.blocked[data.BlockedUserUUID] = blocked
+	c.stateLock.Unlock()
+	c.mirrorBlock(ctx, data.BlockedUserUUID, blocked)
+}
+
+func (c *OLXClient) mirrorBlock(ctx context.Context, userUUID string, blocked bool) {
+	if err := c.UserLogin.SetGhostBlocked(ctx, MakeUserID(userUUID), blocked); err != nil {
 		zerolog.Ctx(ctx).Err(err).Bool("blocked", blocked).Msg("Failed to mirror OLX block to Matrix")
+	}
+}
+
+// blockChange says what a conversation's block state means for the ignore
+// list: block someone seen blocked for the first time, unblock only someone
+// the bridge itself saw blocked before. Someone who was never blocked on OLX
+// is left alone, whatever the user did to them on Matrix.
+func blockChange(known map[string]bool, userUUID string, blocked bool) (change, to bool) {
+	prev, seen := known[userUUID]
+	known[userUUID] = blocked
+	switch {
+	case blocked && !prev:
+		return true, true
+	case !blocked && seen && prev:
+		return true, false
+	default:
+		return false, false
+	}
+}
+
+// syncBlock applies the block state a synced conversation shows.
+func (c *OLXClient) syncBlock(ctx context.Context, conv *olxapi.Conversation) {
+	if conv.Respondent.UUID == "" {
+		return
+	}
+	c.stateLock.Lock()
+	change, to := blockChange(c.blocked, conv.Respondent.UUID, conv.Respondent.Blocked)
+	c.stateLock.Unlock()
+	if change {
+		c.mirrorBlock(ctx, conv.Respondent.UUID, to)
 	}
 }

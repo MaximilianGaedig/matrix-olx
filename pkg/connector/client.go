@@ -77,6 +77,9 @@ type OLXClient struct {
 	stateLock sync.Mutex
 	convs     map[string]*convState
 	profiles  map[string]*olxapi.User
+	// blocked is who the user has blocked on OLX, as far as the bridge has
+	// seen, so that the ignore list is only touched when that changes.
+	blocked map[string]bool
 
 	profileGate profileGate
 }

@@ -169,6 +169,7 @@ func (oc *OLXConnector) LoadUserLogin(ctx context.Context, login *bridgev2.UserL
 		Site:      site,
 		convs:     make(map[string]*convState),
 		profiles:  make(map[string]*olxapi.User),
+		blocked:   make(map[string]bool),
 	}
 	client.API = olxapi.NewClient(oc.apiConfig(meta.DeviceID, site), olxapi.Tokens{
 		RefreshToken: meta.RefreshToken,
