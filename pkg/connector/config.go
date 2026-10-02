@@ -158,7 +158,6 @@ func (oc *OLXConnector) GetConfig() (string, any, up.Upgrader) {
 	return ExampleConfig, &oc.Config, &up.StructUpgrader{
 		SimpleUpgrader: up.SimpleUpgrader(upgradeConfig),
 		Blocks: [][]string{
-			{"sites"},
 			{"user_agent"},
 			{"presence"},
 			{"sync"},

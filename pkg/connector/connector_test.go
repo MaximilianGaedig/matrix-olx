@@ -297,3 +297,27 @@ func TestLoginFlows(t *testing.T) {
 		}
 	}
 }
+
+// The config upgrader runs on every start, on whatever config the admin has:
+// it must take the example itself and a config from before a key existed.
+func TestConfigUpgrade(t *testing.T) {
+	oc := &OLXConnector{}
+	_, _, upgrader := oc.GetConfig()
+	for name, cfg := range map[string]string{
+		"example":       ExampleConfig,
+		"without sites": "displayname_template: \"{{.Name}}\"\ndefault_site: pl\nclient_version: abc\n",
+		"several sites": "sites:\n    - ua\n    - ro\n",
+	} {
+		out, err := runConfigUpgrade(upgrader, cfg)
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if !strings.Contains(out, "sites:") || !strings.Contains(out, "presence:") || strings.Contains(out, "default_site") {
+			t.Errorf("%s: upgraded config is not the current shape:\n%s", name, out)
+		}
+		if name == "several sites" && !(strings.Contains(out, "- ua") && strings.Contains(out, "- ro")) {
+			t.Errorf("configured sites must survive the upgrade:\n%s", out)
+		}
+	}
+}
