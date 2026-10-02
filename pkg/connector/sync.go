@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
@@ -130,6 +131,7 @@ func (c *OLXClient) queueResync(ctx context.Context, conv *olxapi.Conversation) 
 	}
 	c.UserLogin.QueueRemoteEvent(evt)
 	c.syncBlock(ctx, conv)
+	c.noteSeenInChat(conv, state)
 	if latest == nil {
 		return
 	}
@@ -208,4 +210,43 @@ func (c *OLXClient) FetchMessages(ctx context.Context, params bridgev2.FetchMess
 		})
 	}
 	return resp, nil
+}
+
+// seenInChat is the latest moment a chat shows the other person doing
+// something: writing a message, or reading one of the user's.
+func seenInChat(conv *olxapi.Conversation) time.Time {
+	var latest time.Time
+	for i := range conv.Messages {
+		msg := conv.Messages[i]
+		if msg == nil {
+			continue
+		}
+		at := msg.CreatedAt.Time
+		if msg.UserUUID == conv.UserUUID {
+			// The user's own message says something about the other person only once they read it.
+			if !msg.IsRead() {
+				continue
+			}
+			at = msg.ReadAt.Time
+		}
+		if at.After(latest) {
+			latest = at
+		}
+	}
+	return latest
+}
+
+// noteSeenInChat passes on when the chat shows the other person was last
+// around. OLX's own last-seen time is coarse and often older than that: it
+// did not move for someone who had read a message hours later.
+func (c *OLXClient) noteSeenInChat(conv *olxapi.Conversation, state *convState) {
+	c.stateLock.Lock()
+	respondent := state.RespondentUUID
+	c.stateLock.Unlock()
+	at := seenInChat(conv)
+	if c.Main.presence == nil || respondent == "" || at.IsZero() {
+		return
+	}
+	c.Main.presence.Activity(respondent, at)
+	c.Main.seen.Note(respondent, at)
 }

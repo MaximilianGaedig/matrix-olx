@@ -534,3 +534,31 @@ func TestClosedQuestion(t *testing.T) {
 		t.Errorf("a chat without questions has none to answer, got %+v", msg)
 	}
 }
+
+func TestSeenInChat(t *testing.T) {
+	at := func(clock string) olxapi.Time {
+		parsed, err := time.Parse(time.RFC3339, "2026-10-02T"+clock+"Z")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return olxapi.Time{Time: parsed}
+	}
+	read := at("12:30:00")
+	conv := &olxapi.Conversation{UserUUID: "me", Messages: []*olxapi.Message{
+		{ID: "theirs", UserUUID: "them", CreatedAt: at("08:00:00")},
+		{ID: "mine-read", UserUUID: "me", CreatedAt: at("09:07:52"), ReadAt: &read},
+		nil,
+		{ID: "mine-unread", UserUUID: "me", CreatedAt: at("15:00:00")},
+	}}
+	// Reading a message is the last thing they did; a message of the user's that nobody read says nothing.
+	if got := seenInChat(conv); !got.Equal(read.Time) {
+		t.Errorf("seen = %s, want the time they read", got)
+	}
+	conv.Messages = append(conv.Messages, &olxapi.Message{ID: "theirs-later", UserUUID: "them", CreatedAt: at("13:00:00")})
+	if got := seenInChat(conv); !got.Equal(at("13:00:00").Time) {
+		t.Errorf("seen = %s, want their later message", got)
+	}
+	if got := seenInChat(&olxapi.Conversation{UserUUID: "me", Messages: []*olxapi.Message{{UserUUID: "me", CreatedAt: at("09:00:00")}}}); !got.IsZero() {
+		t.Errorf("a chat that only the user wrote in shows nobody, got %s", got)
+	}
+}
