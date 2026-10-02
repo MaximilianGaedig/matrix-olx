@@ -164,12 +164,13 @@ func (oc *OLXConnector) LoadUserLogin(ctx context.Context, login *bridgev2.UserL
 		return fmt.Errorf("login %s: %w", login.ID, err)
 	}
 	client := &OLXClient{
-		Main:      oc,
-		UserLogin: login,
-		Site:      site,
-		convs:     make(map[string]*convState),
-		profiles:  make(map[string]*olxapi.User),
-		blocked:   make(map[string]bool),
+		Main:         oc,
+		UserLogin:    login,
+		Site:         site,
+		convs:        make(map[string]*convState),
+		profiles:     make(map[string]*olxapi.User),
+		blocked:      make(map[string]bool),
+		polledOnline: make(map[string]bool),
 	}
 	client.API = olxapi.NewClient(oc.apiConfig(meta.DeviceID, site), olxapi.Tokens{
 		RefreshToken: meta.RefreshToken,

@@ -178,23 +178,50 @@ func (c *OLXClient) pollPresence(ctx context.Context, interval time.Duration) {
 		if user.IsOnline {
 			online++
 		}
-		c.Main.presence.Update(user.UUID, mapPresence(user, now, interval))
-		if !user.IsOnline && !user.LastSeen.IsZero() {
-			c.Main.seen.Note(user.UUID, user.LastSeen.Time)
+		c.stateLock.Lock()
+		wasOnline := c.polledOnline[user.UUID]
+		c.polledOnline[user.UUID] = user.IsOnline
+		c.stateLock.Unlock()
+		if state := polledState(user, wasOnline, now, interval); state != nil {
+			c.Main.presence.Update(user.UUID, *state)
+		}
+		if active := lastActive(user); !user.IsOnline && !active.IsZero() {
+			// Recent enough, it counts as activity like a message would.
+			c.Main.presence.Activity(user.UUID, active)
+			c.Main.seen.Note(user.UUID, active)
 		}
 		c.updateGhostProfile(ctx, user)
 	}
 	c.UserLogin.Log.Debug().Int("asked", len(uuids)).Int("profiles", len(users)).Int("online", online).Msg("Polled OLX presence")
 }
 
-// mapPresence turns a profile into Matrix presence. An online state is good
-// until two polls from now: if OLX stops being reachable, people don't stay
-// online forever.
-func mapPresence(user *olxapi.User, now time.Time, interval time.Duration) presence.State {
-	if user.IsOnline {
-		return presence.State{Presence: event.PresenceOnline, Until: now.Add(2*interval + 30*time.Second)}
+// polledState is the presence a poll result asks for, if any.
+//
+// OLX's online flag is rarely set: it stayed off for an account with an open
+// chat and for someone who had logged in minutes before. So "not online" in a
+// poll says little, and must not end the online that a message, typing or a
+// read receipt just earned (that one runs out by itself). A poll only takes
+// someone offline whom a poll put online.
+func polledState(user *olxapi.User, wasOnline bool, now time.Time, interval time.Duration) *presence.State {
+	switch {
+	case user.IsOnline:
+		// Good until two polls from now: if OLX stops being reachable, people
+		// don't stay online forever.
+		return &presence.State{Presence: event.PresenceOnline, Until: now.Add(2*interval + 30*time.Second)}
+	case wasOnline:
+		return &presence.State{Presence: event.PresenceOffline}
+	default:
+		return nil
 	}
-	return presence.State{Presence: event.PresenceOffline}
+}
+
+// lastActive is when OLX last saw the person do something: the later of its
+// last-seen time, which moves slowly, and the last login.
+func lastActive(user *olxapi.User) time.Time {
+	if user.LastLogin.After(user.LastSeen.Time) {
+		return user.LastLogin.Time
+	}
+	return user.LastSeen.Time
 }
 
 // updateGhostProfile refreshes the name and picture of a ghost that exists.

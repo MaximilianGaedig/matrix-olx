@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"maunium.net/go/mautrix/event"
 
@@ -441,5 +442,36 @@ func TestReportRoles(t *testing.T) {
 	reasons := []*olxapi.ReportReason{{Key: "spam", Label: "Spam", Description: "Niechciane"}, {Key: "other", Label: "Inne", NeedsDescription: true}}
 	if got := formatReasons(reasons); got != "* `spam` – Spam: Niechciane\n* `other` – Inne (needs a description)\n" {
 		t.Errorf("reasons = %q", got)
+	}
+}
+
+func TestPolledPresence(t *testing.T) {
+	now := time.Date(2026, 10, 2, 14, 0, 0, 0, time.UTC)
+	interval := time.Minute
+	online := &olxapi.User{UUID: "u", IsOnline: true}
+	offline := &olxapi.User{UUID: "u"}
+
+	state := polledState(online, false, now, interval)
+	if state == nil || state.Presence != event.PresenceOnline || !state.Until.Equal(now.Add(2*time.Minute+30*time.Second)) {
+		t.Errorf("online in a poll is online until two polls from now: %+v", state)
+	}
+	if state = polledState(offline, true, now, interval); state == nil || state.Presence != event.PresenceOffline {
+		t.Errorf("someone a poll put online goes offline when a poll no longer finds them: %+v", state)
+	}
+	// The case that matters: OLX's flag is off for nearly everyone, always.
+	if state = polledState(offline, false, now, interval); state != nil {
+		t.Errorf("not-online in a poll must not end an online earned by activity: %+v", state)
+	}
+
+	seen := olxapi.Time{Time: now.Add(-21 * time.Hour)}
+	login := olxapi.Time{Time: now.Add(-13 * time.Minute)}
+	if got := lastActive(&olxapi.User{LastSeen: seen, LastLogin: login}); !got.Equal(login.Time) {
+		t.Errorf("a login after the last-seen time is the later activity, got %v", got)
+	}
+	if got := lastActive(&olxapi.User{LastSeen: login, LastLogin: seen}); !got.Equal(login.Time) {
+		t.Errorf("lastActive = %v", got)
+	}
+	if !lastActive(&olxapi.User{}).IsZero() {
+		t.Error("no times, no activity")
 	}
 }

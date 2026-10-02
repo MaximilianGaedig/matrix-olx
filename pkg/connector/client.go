@@ -80,6 +80,8 @@ type OLXClient struct {
 	// blocked is who the user has blocked on OLX, as far as the bridge has
 	// seen, so that the ignore list is only touched when that changes.
 	blocked map[string]bool
+	// polledOnline is who the last presence poll found online.
+	polledOnline map[string]bool
 
 	profileGate profileGate
 }
