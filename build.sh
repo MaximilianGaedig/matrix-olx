@@ -1,2 +1,2 @@
 #!/bin/sh
-BINARY_NAME=mautrix-olx go tool maubuild "$@"
+BINARY_NAME=matrix-olx go tool maubuild "$@"

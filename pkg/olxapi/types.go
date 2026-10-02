@@ -1,4 +1,4 @@
-// mautrix-olx - A Matrix-OLX puppeting bridge.
+// matrix-olx - A Matrix-OLX puppeting bridge.
 // Copyright (C) 2026 Maximilian Gaedig
 //
 // This program is free software: you can redistribute it and/or modify

@@ -1,4 +1,4 @@
-module github.com/MaximilianGaedig/mautrix-olx
+module github.com/MaximilianGaedig/matrix-olx
 
 go 1.26.0
 

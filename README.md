@@ -1,7 +1,8 @@
-# mautrix-olx
+# matrix-olx
 
 A Matrix–OLX puppeting bridge: your OLX chats (olx.pl, olx.ua, olx.ro, olx.bg, olx.pt, olx.kz, olx.uz) as Matrix rooms. Built on
-[mautrix-go](https://github.com/MaximilianGaedig/mautrix-go)'s bridgev2, like the other mautrix bridges.
+[mautrix-go](https://github.com/MaximilianGaedig/mautrix-go)'s bridgev2. It is an independent bridge, not one of the
+mautrix bridges.
 
 OLX has no public chat API. This bridge speaks the one its website uses: a REST API on
 `api.chat.olx.pl`, a WebSocket for live events, and the public profile API for names, pictures and

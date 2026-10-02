@@ -1,4 +1,4 @@
-// mautrix-olx - A Matrix-OLX puppeting bridge.
+// matrix-olx - A Matrix-OLX puppeting bridge.
 // Copyright (C) 2026 Maximilian Gaedig
 //
 // This program is free software: you can redistribute it and/or modify
@@ -19,7 +19,7 @@ package main
 import (
 	"maunium.net/go/mautrix/bridgev2/matrix/mxmain"
 
-	"github.com/MaximilianGaedig/mautrix-olx/pkg/connector"
+	"github.com/MaximilianGaedig/matrix-olx/pkg/connector"
 )
 
 // Information to find out exactly which commit the bridge was built from.
@@ -31,8 +31,8 @@ var (
 )
 
 var m = mxmain.BridgeMain{
-	Name:        "mautrix-olx",
-	URL:         "https://github.com/MaximilianGaedig/mautrix-olx",
+	Name:        "matrix-olx",
+	URL:         "https://github.com/MaximilianGaedig/matrix-olx",
 	Description: "A Matrix-OLX puppeting bridge.",
 	Version:     "26.10",
 	SemCalVer:   true,

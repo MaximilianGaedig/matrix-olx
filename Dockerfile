@@ -13,7 +13,7 @@ ENV UID=1337 \
 
 RUN apk add --no-cache su-exec ca-certificates olm bash jq curl yq-go
 
-COPY --from=builder /build/mautrix-olx /usr/bin/mautrix-olx
+COPY --from=builder /build/matrix-olx /usr/bin/matrix-olx
 COPY --from=builder /build/docker-run.sh /docker-run.sh
 VOLUME /data
 

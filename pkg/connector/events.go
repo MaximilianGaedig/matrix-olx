@@ -1,4 +1,4 @@
-// mautrix-olx - A Matrix-OLX puppeting bridge.
+// matrix-olx - A Matrix-OLX puppeting bridge.
 // Copyright (C) 2026 Maximilian Gaedig
 //
 // This program is free software: you can redistribute it and/or modify
@@ -26,7 +26,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 
-	"github.com/MaximilianGaedig/mautrix-olx/pkg/olxapi"
+	"github.com/MaximilianGaedig/matrix-olx/pkg/olxapi"
 )
 
 // typingTimeout is how long a typing notification lasts without a stop

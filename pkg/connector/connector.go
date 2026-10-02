@@ -1,4 +1,4 @@
-// mautrix-olx - A Matrix-OLX puppeting bridge.
+// matrix-olx - A Matrix-OLX puppeting bridge.
 // Copyright (C) 2026 Maximilian Gaedig
 //
 // This program is free software: you can redistribute it and/or modify
@@ -30,8 +30,8 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 
-	"github.com/MaximilianGaedig/mautrix-olx/pkg/olxapi"
-	"github.com/MaximilianGaedig/mautrix-olx/pkg/presence"
+	"github.com/MaximilianGaedig/matrix-olx/pkg/olxapi"
+	"github.com/MaximilianGaedig/matrix-olx/pkg/presence"
 )
 
 // Version is the bridge's version, set by main.
@@ -125,7 +125,7 @@ func (oc *OLXConnector) GetName() bridgev2.BridgeName {
 		NetworkURL:       "https://www.olx.com",
 		NetworkIcon:      "mxc://maximiliangaedig.com/d12qMg90lGPcR6xOWPJ5UhS0E8g4PHzN",
 		NetworkID:        "olx",
-		BeeperBridgeType: "github.com/MaximilianGaedig/mautrix-olx",
+		BeeperBridgeType: "github.com/MaximilianGaedig/matrix-olx",
 		DefaultPort:      29341,
 	}
 }
@@ -145,7 +145,7 @@ func (oc *OLXConnector) GetDBMetaTypes() database.MetaTypes {
 }
 
 func (oc *OLXConnector) GetBridgeInfoVersion() (info, capabilities int) {
-	return 2, 1
+	return 3, 1
 }
 
 // ValidateUserID accepts what OLX identifies people by: a UUID.

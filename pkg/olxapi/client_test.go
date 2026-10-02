@@ -635,7 +635,7 @@ func TestBrowserHeaders(t *testing.T) {
 	if major, ok := chromeMajor(ChromeUserAgent(DefaultChromeMajor)); !ok || major != DefaultChromeMajor {
 		t.Errorf("the default User-Agent must name Chrome %d, got %d %v", DefaultChromeMajor, major, ok)
 	}
-	for _, ua := range []string{"mautrix-olx/26.10", "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+	for _, ua := range []string{"matrix-olx/26.10", "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"} {
 		header := http.Header{}
 		setBrowserHeaders(header, ua, testOrigin, siteSameSite, http.MethodGet)

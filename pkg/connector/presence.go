@@ -1,4 +1,4 @@
-// mautrix-olx - A Matrix-OLX puppeting bridge.
+// matrix-olx - A Matrix-OLX puppeting bridge.
 // Copyright (C) 2026 Maximilian Gaedig
 //
 // This program is free software: you can redistribute it and/or modify
@@ -26,8 +26,8 @@ import (
 
 	"maunium.net/go/mautrix/event"
 
-	"github.com/MaximilianGaedig/mautrix-olx/pkg/olxapi"
-	"github.com/MaximilianGaedig/mautrix-olx/pkg/presence"
+	"github.com/MaximilianGaedig/matrix-olx/pkg/olxapi"
+	"github.com/MaximilianGaedig/matrix-olx/pkg/presence"
 )
 
 // OLX's chat has no presence of its own. What it does have is the "online" /

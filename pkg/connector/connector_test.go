@@ -13,7 +13,7 @@ import (
 
 	"maunium.net/go/mautrix/event"
 
-	"github.com/MaximilianGaedig/mautrix-olx/pkg/olxapi"
+	"github.com/MaximilianGaedig/matrix-olx/pkg/olxapi"
 )
 
 func testConfig(t *testing.T) *Config {

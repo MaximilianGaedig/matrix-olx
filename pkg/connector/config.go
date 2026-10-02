@@ -1,4 +1,4 @@
-// mautrix-olx - A Matrix-OLX puppeting bridge.
+// matrix-olx - A Matrix-OLX puppeting bridge.
 // Copyright (C) 2026 Maximilian Gaedig
 //
 // This program is free software: you can redistribute it and/or modify
@@ -27,7 +27,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"maunium.net/go/mautrix/event"
 
-	"github.com/MaximilianGaedig/mautrix-olx/pkg/olxapi"
+	"github.com/MaximilianGaedig/matrix-olx/pkg/olxapi"
 )
 
 //go:embed example-config.yaml

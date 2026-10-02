@@ -1,4 +1,4 @@
-// mautrix-meta - A Matrix-Facebook Messenger and Instagram DM puppeting bridge.
+// matrix-olx - A Matrix-OLX puppeting bridge.
 // Copyright (C) 2026 Maximilian Gaedig
 //
 // This program is free software: you can redistribute it and/or modify
