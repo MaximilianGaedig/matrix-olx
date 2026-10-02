@@ -244,6 +244,7 @@ func (c *Client) doOnce(ctx context.Context, req request, token string, out any)
 	if req.www {
 		httpReq.Header.Set("Accept-Language", c.cfg.WWWLanguage)
 		httpReq.Header.Set("X-Platform-Type", "mobile-html5")
+		httpReq.Header.Set("Version", wwwAPIVersion)
 		if c.cfg.DeviceID != "" {
 			httpReq.Header.Set("X-Device-Id", c.cfg.DeviceID)
 		}
@@ -618,6 +619,9 @@ func (c *Client) Download(ctx context.Context, fileURL string, maxSize int64) ([
 	}
 	return data, resp.Header.Get("Content-Type"), nil
 }
+
+// wwwAPIVersion is the version of its own API the website asks www.olx.pl for.
+const wwwAPIVersion = "v1.19"
 
 // MaxUsersPerRequest is how many profiles are asked for at once; the website
 // asks for a page of conversations' worth.

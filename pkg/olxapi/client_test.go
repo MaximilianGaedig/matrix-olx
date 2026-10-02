@@ -403,6 +403,9 @@ func TestUploadAndUsers(t *testing.T) {
 	if req.URL.Query().Get("user_uuids[0]") != "r1" || req.URL.Query().Get("user_uuids[1]") != "r2" {
 		t.Errorf("users query = %s", req.URL.RawQuery)
 	}
+	if req.Header.Get("Version") != "v1.19" || req.Header.Get("X-Platform-Type") != "mobile-html5" {
+		t.Errorf("www requests name the API version and platform the website does: %v", req.Header)
+	}
 	if req.Header.Get("X-Device-Id") != "device-1" || req.Header.Get("X-Site-Code") != "" {
 		t.Errorf("www requests carry the device ID and no chat headers: %v", req.Header)
 	}
