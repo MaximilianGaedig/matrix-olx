@@ -29,13 +29,13 @@ import (
 )
 
 const (
-	// socketPingInterval is how often the application-level ping is sent. The
-	// website sends one after five minutes of silence; the bridge pings more
-	// often so that a dead connection is noticed sooner.
+	// socketPingInterval is how often the connection is checked and OLX's
+	// application-level ping is sent (the website sends that one after five
+	// minutes of silence).
 	socketPingInterval = 2 * time.Minute
-	// socketReadTimeout is how long the socket may stay silent before it is
-	// taken for dead: two missed pings.
-	socketReadTimeout  = 2*socketPingInterval + 30*time.Second
+	// socketPongTimeout is how long the server has to answer a WebSocket ping
+	// before the connection is taken for dead.
+	socketPongTimeout  = 20 * time.Second
 	socketMinBackoff   = 2 * time.Second
 	socketMaxBackoff   = 2 * time.Minute
 	socketStableAfter  = time.Minute
@@ -153,9 +153,15 @@ func (c *Client) readSocket(ctx context.Context, conn *websocket.Conn, handler S
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				writeCtx, writeCancel := context.WithTimeout(ctx, 15*time.Second)
-				err := conn.Write(writeCtx, websocket.MessageText, []byte(`{"action":"ping"}`))
-				writeCancel()
+				// OLX does not answer its application-level ping, so silence
+				// says nothing about the connection (an idle account is silent
+				// for hours). A WebSocket ping does get an answer.
+				pingCtx, pingCancel := context.WithTimeout(ctx, socketPongTimeout)
+				err := conn.Write(pingCtx, websocket.MessageText, []byte(`{"action":"ping"}`))
+				if err == nil {
+					err = conn.Ping(pingCtx)
+				}
+				pingCancel()
 				if err != nil {
 					cancel()
 					return
@@ -164,9 +170,7 @@ func (c *Client) readSocket(ctx context.Context, conn *websocket.Conn, handler S
 		}
 	}()
 	for {
-		readCtx, readCancel := context.WithTimeout(ctx, socketReadTimeout)
-		_, data, err := conn.Read(readCtx)
-		readCancel()
+		_, data, err := conn.Read(ctx)
 		if err != nil {
 			return err
 		}
