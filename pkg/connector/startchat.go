@@ -68,14 +68,14 @@ func encodeBase62(n int64) string {
 	return string(out)
 }
 
-// AdURL is the address of an ad. OLX redirects it to the full address, which
-// has the ad's title in it.
-func AdURL(adID string) string {
+// AdURL is the address of an ad on a site. OLX redirects it to the full
+// address, which has the ad's title in it.
+func AdURL(site olxapi.Site, adID string) string {
 	n, err := strconv.ParseInt(adID, 10, 64)
 	if err != nil || n <= 0 {
 		return ""
 	}
-	return "https://www.olx.pl/d/oferta/x-ID" + encodeBase62(n) + ".html"
+	return site.Origin() + "/d/oferta/x-ID" + encodeBase62(n) + ".html"
 }
 
 // ParseAdID reads an ad's number from the number itself or from the ad's address.

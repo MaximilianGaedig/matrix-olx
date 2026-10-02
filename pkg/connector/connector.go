@@ -110,8 +110,9 @@ func (oc *OLXConnector) userAgent() string {
 	return olxapi.ChromeUserAgent(olxapi.DefaultChromeMajor)
 }
 
-func (oc *OLXConnector) apiConfig(deviceID string) olxapi.Config {
+func (oc *OLXConnector) apiConfig(deviceID string, site olxapi.Site) olxapi.Config {
 	return olxapi.Config{
+		Site:          site,
 		ClientVersion: oc.Config.ClientVersion,
 		UserAgent:     oc.userAgent(),
 		DeviceID:      deviceID,
@@ -121,7 +122,7 @@ func (oc *OLXConnector) apiConfig(deviceID string) olxapi.Config {
 func (oc *OLXConnector) GetName() bridgev2.BridgeName {
 	return bridgev2.BridgeName{
 		DisplayName:      "OLX",
-		NetworkURL:       "https://www.olx.pl",
+		NetworkURL:       "https://www.olx.com",
 		NetworkIcon:      "",
 		NetworkID:        "olx",
 		BeeperBridgeType: "github.com/MaximilianGaedig/mautrix-olx",
@@ -158,13 +159,18 @@ func (oc *OLXConnector) LoadUserLogin(ctx context.Context, login *bridgev2.UserL
 	if meta.DeviceID == "" {
 		meta.DeviceID = uuid.NewString()
 	}
+	site, err := olxapi.LookupSite(meta.Site)
+	if err != nil {
+		return fmt.Errorf("login %s: %w", login.ID, err)
+	}
 	client := &OLXClient{
 		Main:      oc,
 		UserLogin: login,
+		Site:      site,
 		convs:     make(map[string]*convState),
 		profiles:  make(map[string]*olxapi.User),
 	}
-	client.API = olxapi.NewClient(oc.apiConfig(meta.DeviceID), olxapi.Tokens{
+	client.API = olxapi.NewClient(oc.apiConfig(meta.DeviceID, site), olxapi.Tokens{
 		RefreshToken: meta.RefreshToken,
 		IDToken:      meta.IDToken,
 		Expiry:       meta.IDTokenExpiry.Time,

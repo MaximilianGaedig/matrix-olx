@@ -1,6 +1,6 @@
 # mautrix-olx
 
-A Matrix–OLX puppeting bridge: your [OLX](https://www.olx.pl) chats as Matrix rooms. Built on
+A Matrix–OLX puppeting bridge: your OLX chats (olx.pl, olx.ua, olx.ro, olx.bg, olx.pt, olx.kz, olx.uz) as Matrix rooms. Built on
 [mautrix-go](https://github.com/MaximilianGaedig/mautrix-go)'s bridgev2, like the other mautrix bridges.
 
 OLX has no public chat API. This bridge speaks the one its website uses: a REST API on
@@ -35,15 +35,27 @@ place, state and link in the topic.
 OLX's chat has no replies, edits, reactions, message deletion, voice messages, videos or calls, so
 there is nothing to bridge there; Matrix clients are told so through the room's capabilities.
 
+## Sites
+
+OLX runs one site per country on the same platform, and an account belongs to one of them. The
+bridge works with all of them: olx.pl, olx.ua, olx.ro, olx.bg, olx.pt, olx.kz and olx.uz. Each
+login is for one site; `network.default_site` only decides which one is offered first.
+
 ## Logging in
 
-Send `login` to the bridge bot. It answers with a link to OLX's own login page. Open it, log in if
-OLX asks, and you end up on an address starting with `https://www.olx.pl/d/callback/?code=…`. Paste
-that address back to the bot.
+Send `login` to the bridge bot and pick a method for your site.
 
-The bridge never sees your password and takes nothing from your browser: it gets a session of its
-own, the same way OLX's website does (OAuth authorization code with PKCE), and keeps it alive with
-its refresh token.
+**Login page** (`page-pl`, `page-ua`, …) gives the bridge a session of its own, the way OLX's
+website gets one (OAuth authorization code with PKCE). The bridge never sees your password. OLX's
+login ends on a page that immediately jumps to the home page, so the address it ends on has to be
+read without letting that page run: copy the link the bot gives you, type `view-source:` into the
+address bar of a new tab, paste the link after it and press Enter. The address bar then shows
+`view-source:https://www.olx.pl/d/callback/?code=…`; send that to the bot. (If you opened the link
+normally, the same address is in the browser's history.)
+
+**Session token** (`token-pl`, …) copies the session of a browser that is logged in: the bot gives
+you one line to paste into that browser's developer console, which puts the token on the clipboard.
+The bridge then shares that browser's session.
 
 ## Presence
 

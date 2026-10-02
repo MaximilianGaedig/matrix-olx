@@ -9,6 +9,10 @@ displayname_template: "{{.Name}} (OLX)"
 # {{.Price}} - the ad's price, formatted ("1 900 zł"), empty if it has none
 room_name_template: "{{.Name}} · {{.Title}}"
 
+# OLX runs one site per country (pl, ua, ro, bg, pt, kz, uz), all on the same platform, and an
+# account belongs to one of them. Every site can be logged in to; this one is offered first.
+default_site: pl
+
 # The User-Agent to send to OLX. Empty means that of current desktop Chrome on Linux, which
 # is what OLX's web app runs in; the browser headers that go with it (client hints, fetch
 # metadata, origin) are derived from it. Set it to your own browser's to match that instead.
@@ -17,7 +21,7 @@ user_agent:
 client_version: b86050d0_10123458
 # An HTTP or SOCKS5 proxy for everything the bridge sends to OLX.
 proxy:
-# A proxy for www.olx.pl only, which serves profiles (names, pictures, online status).
+# A proxy for the website itself (www.olx.pl and so on) only, which serves profiles (names, pictures, online status).
 # OLX refuses requests to it from datacenter addresses, so a bridge on a hosted server
 # only gets profiles and polled presence when this points at a proxy on a home connection.
 # Chatting itself does not need it. Empty means the same as `proxy`.

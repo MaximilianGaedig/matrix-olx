@@ -18,6 +18,7 @@ import (
 
 func testConfig(t *testing.T) *Config {
 	cfg := &Config{
+		DefaultSite:         "pl",
 		DisplaynameTemplate: "{{.Name}} (OLX)",
 		RoomNameTemplate:    "{{.Name}} · {{.Title}}",
 		ArchiveTag:          event.RoomTagLowPriority,
@@ -53,7 +54,7 @@ func TestExampleConfigParses(t *testing.T) {
 	if !cfg.Presence.Enabled || cfg.Presence.PollInterval.Seconds() != 60 || cfg.Presence.MaxUsers != 80 ||
 		!cfg.Sync.Archived || cfg.Sync.Interval.Minutes() != 30 ||
 		cfg.ArchiveTag != event.RoomTagLowPriority || cfg.SavedTag != event.RoomTagFavourite ||
-		cfg.ClientVersion == "" || cfg.DeleteChatPermanently {
+		cfg.ClientVersion == "" || cfg.DeleteChatPermanently || cfg.DefaultSite != "pl" {
 		t.Errorf("example config parsed as %+v", cfg)
 	}
 }
@@ -98,10 +99,10 @@ func TestAdIDs(t *testing.T) {
 			t.Errorf("ParseAdID(%q) must fail", bad)
 		}
 	}
-	if got := AdURL("1058393869"); got != "https://www.olx.pl/d/oferta/x-ID19CUAR.html" {
+	if got := AdURL(olxapi.MustSite("ua"), "1058393869"); got != "https://www.olx.ua/d/oferta/x-ID19CUAR.html" {
 		t.Errorf("AdURL = %q", got)
 	}
-	if AdURL("") != "" || AdURL("abc") != "" {
+	if AdURL(olxapi.MustSite("pl"), "") != "" || AdURL(olxapi.MustSite("pl"), "abc") != "" {
 		t.Error("AdURL of a non-number must be empty")
 	}
 }
@@ -115,14 +116,14 @@ func TestAdTopic(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "Huawei P30 — 1 900 zł (negotiable)\nPoznań, Wilda · ad inactive · ID 1058393869\nhttps://www.olx.pl/d/oferta/x-ID19CUAR.html"
-	if got := adTopic(&conv); got != want {
+	if got := adTopic(olxapi.MustSite("pl"), &conv); got != want {
 		t.Errorf("topic =\n%s\nwant\n%s", got, want)
 	}
-	if got := adTopic(&olxapi.Conversation{}); got != "" {
+	if got := adTopic(olxapi.MustSite("pl"), &olxapi.Conversation{}); got != "" {
 		t.Errorf("a chat without an ad has no topic, got %q", got)
 	}
 	bare := olxapi.Conversation{Ad: &olxapi.Ad{ID: "1058393869", Title: "Huawei P30"}}
-	if got := adTopic(&bare); !strings.HasPrefix(got, "Huawei P30\nID 1058393869\n") {
+	if got := adTopic(olxapi.MustSite("pl"), &bare); !strings.HasPrefix(got, "Huawei P30\nID 1058393869\n") {
 		t.Errorf("topic without ad details = %q", got)
 	}
 }
@@ -231,5 +232,53 @@ func TestWWWClientIsHTTP1Only(t *testing.T) {
 	}
 	if _, err = newHTTPClient("://bad", false); err == nil {
 		t.Error("an invalid proxy address must be refused")
+	}
+}
+
+func TestLoginFlows(t *testing.T) {
+	oc := &OLXConnector{Config: *testConfig(t)}
+	oc.Config.DefaultSite = "ua"
+	flows := oc.GetLoginFlows()
+	if len(flows) != 2*len(olxapi.Sites) || flows[0].ID != "page-ua" || flows[len(olxapi.Sites)].ID != "token-ua" {
+		t.Fatalf("every site gets both methods, the default site first: %+v", flows)
+	}
+	for _, flow := range flows {
+		if _, _, err := oc.parseFlowID(flow.ID); err != nil {
+			t.Errorf("offered flow %q is not accepted: %v", flow.ID, err)
+		}
+	}
+	for id, want := range map[string]string{"page": "page/ua", "token": "token/ua", "browser": "page/ua", "page-pl": "page/pl", "token-ro": "token/ro"} {
+		method, site, err := oc.parseFlowID(id)
+		if err != nil || method+"/"+site.Code != want {
+			t.Errorf("parseFlowID(%q) = %s/%s, %v; want %s", id, method, site.Code, err, want)
+		}
+	}
+	for _, bad := range []string{"password", "page-xx", ""} {
+		if _, _, err := oc.parseFlowID(bad); err == nil {
+			t.Errorf("parseFlowID(%q) must fail", bad)
+		}
+	}
+
+	login := &OLXLogin{Main: oc, Method: LoginMethodPage, Site: olxapi.MustSite("ro")}
+	step, err := login.Start(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"https://login.olx.ro/oauth2/authorize?", "view-source:", "view-source:https://www.olx.ro/d/callback/?code=", "Ctrl+H", "OLX.ro"} {
+		if !strings.Contains(step.Instructions, want) {
+			t.Errorf("page instructions lack %q", want)
+		}
+	}
+	if strings.Contains(step.Instructions, login.pkce.Verifier) {
+		t.Error("the verifier must not be shown")
+	}
+	login = &OLXLogin{Main: oc, Method: LoginMethodToken, Site: olxapi.MustSite("pl")}
+	if step, err = login.Start(t.Context()); err != nil || !strings.Contains(step.Instructions, tokenSnippet) || !strings.Contains(step.Instructions, "https://www.olx.pl") {
+		t.Errorf("token instructions must carry the snippet and the site: %v", err)
+	}
+	for in, want := range map[string]string{" abc \n": "abc", `"abc"`: "abc", "`abc`": "abc", "'abc'": "abc"} {
+		if got := cleanToken(in); got != want {
+			t.Errorf("cleanToken(%q) = %q", in, got)
+		}
 	}
 }

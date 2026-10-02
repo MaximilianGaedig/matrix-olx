@@ -22,6 +22,9 @@ import (
 )
 
 type UserLoginMetadata struct {
+	// Site is the OLX site the account is on ("pl", "ua", ...). Logins from
+	// before the bridge knew more than one site have none and are on olx.pl.
+	Site          string        `json:"site,omitempty"`
 	RefreshToken  string        `json:"refresh_token"`
 	IDToken       string        `json:"id_token,omitempty"`
 	IDTokenExpiry jsontime.Unix `json:"id_token_expiry,omitempty"`

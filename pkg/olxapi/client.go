@@ -38,16 +38,9 @@ import (
 )
 
 const (
-	DefaultChatURL       = "https://api.chat.olx.pl"
-	DefaultSocketURL     = "wss://ws.chat.olx.pl"
-	DefaultWWWURL        = "https://www.olx.pl"
 	DefaultUploadURL     = "https://ireland.apollo.olxcdn.com/v1/temp-files"
-	DefaultSiteCode      = "olxpl"
 	DefaultClientVersion = "b86050d0_10123458"
 	DefaultPlatform      = "DESKTOP"
-	DefaultLanguage      = "pl-PL, pl"
-	// DefaultWWWLanguage is what the website sends to its own API on www.olx.pl.
-	DefaultWWWLanguage = "pl"
 
 	// MaxPageSize is the largest conversation list page the website asks for.
 	MaxPageSize = 40
@@ -58,6 +51,10 @@ const (
 // Config is everything about OLX that could differ between sites or change
 // with a new release of their web app.
 type Config struct {
+	// Site is the OLX site the account is on. Everything below that is left
+	// empty follows from it.
+	Site Site
+
 	ChatURL       string
 	SocketURL     string
 	WWWURL        string
@@ -73,21 +70,25 @@ type Config struct {
 }
 
 func (c *Config) setDefaults() {
+	if c.Site.Code == "" {
+		c.Site = MustSite(DefaultSite)
+	}
 	def := func(field *string, value string) {
 		if *field == "" {
 			*field = value
 		}
 	}
-	def(&c.ChatURL, DefaultChatURL)
-	def(&c.SocketURL, DefaultSocketURL)
-	def(&c.WWWURL, DefaultWWWURL)
+	def(&c.ChatURL, c.Site.chatURL())
+	def(&c.SocketURL, c.Site.socketURL())
+	def(&c.WWWURL, c.Site.Origin())
 	def(&c.UploadURL, DefaultUploadURL)
-	def(&c.SiteCode, DefaultSiteCode)
+	def(&c.SiteCode, c.Site.SiteCode)
 	def(&c.ClientVersion, DefaultClientVersion)
 	def(&c.Platform, DefaultPlatform)
-	def(&c.Language, DefaultLanguage)
-	def(&c.WWWLanguage, DefaultWWWLanguage)
+	def(&c.Language, c.Site.Language)
+	def(&c.WWWLanguage, c.Site.WWWLanguage)
 	def(&c.UserAgent, ChromeUserAgent(DefaultChromeMajor))
+	c.Auth.Site = c.Site
 	c.Auth.UserAgent = c.UserAgent
 	c.Auth.setDefaults()
 }
@@ -248,13 +249,13 @@ func (c *Client) doOnce(ctx context.Context, req request, token string, out any)
 		if c.cfg.DeviceID != "" {
 			httpReq.Header.Set("X-Device-Id", c.cfg.DeviceID)
 		}
-		setBrowserHeaders(httpReq.Header, c.cfg.UserAgent, siteSameOrigin, req.method)
+		setBrowserHeaders(httpReq.Header, c.cfg.UserAgent, c.cfg.Site.Origin(), siteSameOrigin, req.method)
 	} else {
 		httpReq.Header.Set("Accept-Language", c.cfg.Language)
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("X-Site-Code", c.cfg.SiteCode)
 		httpReq.Header.Set("X-Client-Version", c.cfg.ClientVersion)
-		setBrowserHeaders(httpReq.Header, c.cfg.UserAgent, siteSameSite, req.method)
+		setBrowserHeaders(httpReq.Header, c.cfg.UserAgent, c.cfg.Site.Origin(), siteSameSite, req.method)
 	}
 	for key, value := range req.headers {
 		httpReq.Header.Set(key, value)
@@ -536,7 +537,7 @@ func (c *Client) uploadOnce(ctx context.Context, token string, data []byte, mime
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", mimeType)
 	req.Header.Set("Expires", time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02T15:04:05.000Z"))
-	setBrowserHeaders(req.Header, c.cfg.UserAgent, siteCrossSite, http.MethodPost)
+	setBrowserHeaders(req.Header, c.cfg.UserAgent, c.cfg.Site.Origin(), siteCrossSite, http.MethodPost)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err

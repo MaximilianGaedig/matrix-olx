@@ -76,7 +76,7 @@ func (c *Client) dialSocket(ctx context.Context) (*websocket.Conn, error) {
 	header := http.Header{}
 	header.Set("User-Agent", c.cfg.UserAgent)
 	if _, isChrome := chromeMajor(c.cfg.UserAgent); isChrome {
-		header.Set("Origin", WebOrigin)
+		header.Set("Origin", c.cfg.Site.Origin())
 		header.Set("Accept-Language", c.cfg.Language)
 		header.Set("Cache-Control", "no-cache")
 		header.Set("Pragma", "no-cache")

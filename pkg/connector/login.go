@@ -30,40 +30,82 @@ import (
 	"github.com/MaximilianGaedig/mautrix-olx/pkg/olxapi"
 )
 
+// Login flows are named "<method>-<site>": "page-pl", "token-ua". The plain
+// method names stand for the default site.
 const (
-	LoginFlowIDBrowser = "browser"
-	LoginFlowIDToken   = "token"
+	LoginMethodPage  = "page"
+	LoginMethodToken = "token"
 
 	LoginStepIDCallback = "com.github.maximiliangaedig.olx.login.callback"
 	LoginStepIDToken    = "com.github.maximiliangaedig.olx.login.token"
 	LoginStepIDComplete = "com.github.maximiliangaedig.olx.login.complete"
 )
 
+func (oc *OLXConnector) defaultSite() olxapi.Site {
+	site, err := olxapi.LookupSite(oc.Config.DefaultSite)
+	if err != nil {
+		return olxapi.MustSite(olxapi.DefaultSite)
+	}
+	return site
+}
+
 func (oc *OLXConnector) GetLoginFlows() []bridgev2.LoginFlow {
-	return []bridgev2.LoginFlow{{
-		Name:        "OLX login page",
-		Description: "Open OLX's own login page in your browser and paste the address it sends you to. The bridge never sees your password.",
-		ID:          LoginFlowIDBrowser,
-	}, {
-		Name:        "Refresh token",
-		Description: "Paste a refresh token of an existing OLX session.",
-		ID:          LoginFlowIDToken,
-	}}
+	def := oc.defaultSite()
+	sites := []olxapi.Site{def}
+	for _, site := range olxapi.Sites {
+		if site.Code != def.Code {
+			sites = append(sites, site)
+		}
+	}
+	flows := make([]bridgev2.LoginFlow, 0, 2*len(sites))
+	for _, site := range sites {
+		flows = append(flows, bridgev2.LoginFlow{
+			Name:        site.Name() + " login page",
+			Description: "Log in on " + site.Name() + "'s own login page and paste the address it sends you to. The bridge gets a session of its own and never sees your password.",
+			ID:          LoginMethodPage + "-" + site.Code,
+		})
+	}
+	for _, site := range sites {
+		flows = append(flows, bridgev2.LoginFlow{
+			Name:        site.Name() + " session token",
+			Description: "Copy the session token out of a browser that is logged in to " + site.Name() + ". The bridge then shares that browser's session.",
+			ID:          LoginMethodToken + "-" + site.Code,
+		})
+	}
+	return flows
+}
+
+// parseFlowID splits a flow ID into its method and site.
+func (oc *OLXConnector) parseFlowID(flowID string) (method string, site olxapi.Site, err error) {
+	method, siteName, hasSite := strings.Cut(flowID, "-")
+	if !hasSite {
+		site = oc.defaultSite()
+	} else if site, err = olxapi.LookupSite(siteName); err != nil {
+		return "", site, err
+	}
+	switch method {
+	case LoginMethodPage, "browser":
+		return LoginMethodPage, site, nil
+	case LoginMethodToken:
+		return LoginMethodToken, site, nil
+	default:
+		return "", site, fmt.Errorf("unknown login flow %q", flowID)
+	}
 }
 
 func (oc *OLXConnector) CreateLogin(ctx context.Context, user *bridgev2.User, flowID string) (bridgev2.LoginProcess, error) {
-	switch flowID {
-	case LoginFlowIDBrowser, LoginFlowIDToken:
-		return &OLXLogin{Main: oc, User: user, FlowID: flowID}, nil
-	default:
-		return nil, fmt.Errorf("unknown login flow %q", flowID)
+	method, site, err := oc.parseFlowID(flowID)
+	if err != nil {
+		return nil, err
 	}
+	return &OLXLogin{Main: oc, User: user, Method: method, Site: site}, nil
 }
 
 type OLXLogin struct {
 	Main   *OLXConnector
 	User   *bridgev2.User
-	FlowID string
+	Method string
+	Site   olxapi.Site
 
 	pkce *olxapi.PKCE
 }
@@ -71,37 +113,59 @@ type OLXLogin struct {
 var _ bridgev2.LoginProcessUserInput = (*OLXLogin)(nil)
 
 func (ol *OLXLogin) authConfig() olxapi.AuthConfig {
-	return olxapi.AuthConfig{UserAgent: ol.Main.userAgent()}
+	return olxapi.AuthConfig{Site: ol.Site, UserAgent: ol.Main.userAgent()}
+}
+
+// tokenSnippet reads the refresh token the web app keeps in the browser's
+// local storage and puts it on the clipboard.
+const tokenSnippet = `copy(JSON.parse(localStorage[Object.keys(localStorage).find(k=>k.startsWith("@@auth0spajs@@::")&&!k.includes("@@user@@"))]).body.refresh_token)`
+
+func (ol *OLXLogin) pageInstructions(link string) string {
+	callback := ol.authConfig().Redirect()
+	return "OLX's login ends on a page that jumps to the home page right away, so the address has to be read without letting that page run:\n\n" +
+		"1. Be logged in to " + ol.Site.Name() + " in your browser.\n" +
+		"2. Copy this link (copy it, don't open it):\n\n" + link + "\n\n" +
+		"3. Open a new tab, type `view-source:` into the address bar, paste the link directly after it and press Enter.\n" +
+		"4. The tab shows a page of code, and the address bar now reads `view-source:" + callback + "?code=…`. Copy that whole address and send it here.\n\n" +
+		"If you opened the link the normal way instead: the address you need is in the browser's history (Ctrl+H), the entry that starts with `" +
+		strings.TrimPrefix(callback, "https://") + "?code=`. It works once and for a few minutes; `login` again gives a new link."
+}
+
+func (ol *OLXLogin) tokenInstructions() string {
+	return "1. Open " + ol.Site.Origin() + " in a browser where you are logged in.\n" +
+		"2. Open the developer console (F12, then the Console tab). If the browser asks you to, type `allow pasting` first.\n" +
+		"3. Paste this line and press Enter. It copies the session token to your clipboard:\n\n" +
+		"`" + tokenSnippet + "`\n\n" +
+		"4. Paste the clipboard here.\n\n" +
+		"The bridge then uses the same session as that browser: logging out there can log the bridge out too. The login page method gives the bridge a session of its own."
 }
 
 func (ol *OLXLogin) Start(ctx context.Context) (*bridgev2.LoginStep, error) {
-	if ol.FlowID == LoginFlowIDToken {
+	if ol.Method == LoginMethodToken {
 		return &bridgev2.LoginStep{
 			Type:         bridgev2.LoginStepTypeUserInput,
 			StepID:       LoginStepIDToken,
-			Instructions: "Paste the refresh token of an OLX session.",
+			Instructions: ol.tokenInstructions(),
 			UserInputParams: &bridgev2.LoginUserInputParams{
 				Fields: []bridgev2.LoginInputDataField{{
 					Type: bridgev2.LoginInputFieldTypeToken,
 					ID:   "refresh_token",
-					Name: "Refresh token",
+					Name: "Session token",
 				}},
 			},
 		}, nil
 	}
 	ol.pkce = olxapi.NewPKCE()
 	return &bridgev2.LoginStep{
-		Type:   bridgev2.LoginStepTypeUserInput,
-		StepID: LoginStepIDCallback,
-		Instructions: "1. Open this link in a browser and log in to OLX if it asks: " + ol.authConfig().AuthorizeURL(ol.pkce) + "\n" +
-			"2. OLX then sends you to an address starting with " + olxapi.DefaultRedirectURI + "?code=… (the page itself may show an error or the OLX home page, that is fine).\n" +
-			"3. Copy that whole address from the address bar and send it here. If the page moved on before you could copy it, press Back or open the link again.",
+		Type:         bridgev2.LoginStepTypeUserInput,
+		StepID:       LoginStepIDCallback,
+		Instructions: ol.pageInstructions(ol.authConfig().AuthorizeURL(ol.pkce)),
 		UserInputParams: &bridgev2.LoginUserInputParams{
 			Fields: []bridgev2.LoginInputDataField{{
 				Type:        bridgev2.LoginInputFieldTypeURL,
 				ID:          "callback",
-				Name:        "Address OLX sent you to",
-				Description: "The whole address, or just the value of its code parameter",
+				Name:        "Address from the address bar",
+				Description: "The whole address, with or without view-source: in front",
 			}},
 		},
 	}, nil
@@ -109,13 +173,23 @@ func (ol *OLXLogin) Start(ctx context.Context) (*bridgev2.LoginStep, error) {
 
 func (ol *OLXLogin) Cancel() {}
 
+// cleanToken strips what tends to come along when a token is pasted: quotes,
+// backticks, whitespace.
+func cleanToken(input string) string {
+	return strings.Trim(strings.TrimSpace(input), "\"'` \n\t")
+}
+
 func (ol *OLXLogin) SubmitUserInput(ctx context.Context, input map[string]string) (*bridgev2.LoginStep, error) {
 	var tokens *olxapi.Tokens
 	var err error
-	if ol.FlowID == LoginFlowIDToken {
-		tokens, err = ol.authConfig().Refresh(ctx, ol.Main.httpClient, strings.TrimSpace(input["refresh_token"]))
+	if ol.Method == LoginMethodToken {
+		token := cleanToken(input["refresh_token"])
+		if token == "" || token == "undefined" || token == "null" {
+			return nil, fmt.Errorf("that is not a token: the browser has no %s session to copy (are you logged in there?)", ol.Site.Name())
+		}
+		tokens, err = ol.authConfig().Refresh(ctx, ol.Main.httpClient, token)
 		if err != nil {
-			return nil, fmt.Errorf("OLX did not accept the refresh token: %w", err)
+			return nil, fmt.Errorf("%s did not accept the token: %w", ol.Site.Name(), err)
 		}
 	} else {
 		if ol.pkce == nil {
@@ -127,7 +201,7 @@ func (ol *OLXLogin) SubmitUserInput(ctx context.Context, input map[string]string
 		}
 		tokens, err = ol.authConfig().ExchangeCode(ctx, ol.Main.httpClient, code, ol.pkce)
 		if err != nil {
-			return nil, fmt.Errorf("OLX did not accept the code (it is single-use and short-lived, open the link again): %w", err)
+			return nil, fmt.Errorf("%s did not accept the code (it works once and only for a few minutes: send `login` again for a new link): %w", ol.Site.Name(), err)
 		}
 	}
 	return ol.finish(ctx, tokens)
@@ -138,10 +212,11 @@ func (ol *OLXLogin) finish(ctx context.Context, tokens *olxapi.Tokens) (*bridgev
 	if err != nil {
 		return nil, fmt.Errorf("OLX returned an unreadable token: %w", err)
 	}
-	remoteName := claims.Email
-	if remoteName == "" {
-		remoteName = claims.Subject
+	account := claims.Email
+	if account == "" {
+		account = claims.Subject
 	}
+	remoteName := account + " (" + ol.Site.Name() + ")"
 	ul, err := ol.User.NewLogin(ctx, &database.UserLogin{
 		ID:         MakeUserLoginID(claims.Subject),
 		RemoteName: remoteName,
@@ -149,6 +224,7 @@ func (ol *OLXLogin) finish(ctx context.Context, tokens *olxapi.Tokens) (*bridgev
 			Email: claims.Email,
 		},
 		Metadata: &UserLoginMetadata{
+			Site:          ol.Site.Code,
 			RefreshToken:  tokens.RefreshToken,
 			IDToken:       tokens.IDToken,
 			IDTokenExpiry: jsontime.U(tokens.Expiry),
@@ -165,7 +241,7 @@ func (ol *OLXLogin) finish(ctx context.Context, tokens *olxapi.Tokens) (*bridgev
 	return &bridgev2.LoginStep{
 		Type:         bridgev2.LoginStepTypeComplete,
 		StepID:       LoginStepIDComplete,
-		Instructions: fmt.Sprintf("Logged in to OLX as %s. Your chats are being synced.", remoteName),
+		Instructions: fmt.Sprintf("Logged in to %s as %s. Your chats are being synced.", ol.Site.Name(), account),
 		CompleteParams: &bridgev2.LoginCompleteParams{
 			UserLoginID: ul.ID,
 			UserLogin:   ul,

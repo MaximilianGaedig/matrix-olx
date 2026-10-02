@@ -32,10 +32,6 @@ import (
 // it as Chrome moves on (or set user_agent in the config).
 const DefaultChromeMajor = 154
 
-// WebOrigin is the origin OLX's web app runs on, which every request it makes
-// names as its origin and referrer.
-const WebOrigin = "https://www.olx.pl"
-
 // ChromeUserAgent is what desktop Chrome on Linux sends. Chrome freezes
 // everything but the major version.
 func ChromeUserAgent(major int) string {
@@ -105,14 +101,15 @@ const (
 	siteCrossSite fetchSite = "cross-site"
 )
 
-// chatPage is the page of the web app that the chat lives on.
-const chatPage = WebOrigin + "/myaccount/answers/"
+// chatPagePath is the page of the web app that the chat lives on.
+const chatPagePath = "/myaccount/answers/"
 
-// setBrowserHeaders adds what Chrome adds to a fetch() made by OLX's web app.
+// setBrowserHeaders adds what Chrome adds to a fetch() made by OLX's web app,
+// which runs on the given origin.
 // With a User-Agent that is not Chrome's, only the User-Agent is sent: client
 // hints and fetch metadata from something that says it is not a browser would
 // contradict it.
-func setBrowserHeaders(header http.Header, userAgent string, site fetchSite, method string) {
+func setBrowserHeaders(header http.Header, userAgent, origin string, site fetchSite, method string) {
 	if userAgent == "" {
 		return
 	}
@@ -137,12 +134,12 @@ func setBrowserHeaders(header http.Header, userAgent string, site fetchSite, met
 	if site == siteSameOrigin {
 		// The full address goes to the same origin, and an Origin header only
 		// with requests that change something.
-		header.Set("Referer", chatPage)
+		header.Set("Referer", origin+chatPagePath)
 		if method != http.MethodGet && method != http.MethodHead {
-			header.Set("Origin", WebOrigin)
+			header.Set("Origin", origin)
 		}
 	} else {
-		header.Set("Referer", WebOrigin+"/")
-		header.Set("Origin", WebOrigin)
+		header.Set("Referer", origin+"/")
+		header.Set("Origin", origin)
 	}
 }

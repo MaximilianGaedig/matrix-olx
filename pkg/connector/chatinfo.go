@@ -104,7 +104,7 @@ var publicationStatuses = map[string]string{
 }
 
 // adTopic describes the ad a chat is about, for the room topic.
-func adTopic(conv *olxapi.Conversation) string {
+func adTopic(site olxapi.Site, conv *olxapi.Conversation) string {
 	title := adTitle(conv)
 	if title == "" {
 		return ""
@@ -148,7 +148,7 @@ func adTopic(conv *olxapi.Conversation) string {
 			parts = append(parts, "ID "+id)
 		}
 	}
-	if link := AdURL(adID(conv)); link != "" {
+	if link := AdURL(site, adID(conv)); link != "" {
 		parts = append(parts, link)
 	}
 	return strings.Join(parts, "\n")
@@ -224,7 +224,7 @@ func (c *OLXClient) wrapChatInfo(conv *olxapi.Conversation) *bridgev2.ChatInfo {
 	})
 	info := &bridgev2.ChatInfo{
 		Name:  &name,
-		Topic: ptr.Ptr(adTopic(conv)),
+		Topic: ptr.Ptr(adTopic(c.Site, conv)),
 		Members: &bridgev2.ChatMemberList{
 			IsFull:           true,
 			TotalMemberCount: 2,

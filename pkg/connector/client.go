@@ -63,6 +63,8 @@ type OLXClient struct {
 	Main      *OLXConnector
 	UserLogin *bridgev2.UserLogin
 	API       *olxapi.Client
+	// Site is the OLX site the account is on.
+	Site olxapi.Site
 
 	connectLock sync.Mutex
 	cancel      context.CancelFunc

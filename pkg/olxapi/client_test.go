@@ -20,6 +20,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	testRedirect = "https://www.olx.pl/d/callback/"
+	testOrigin   = "https://www.olx.pl"
+)
+
 const testUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 
 func fakeJWT(sub string, exp time.Time) string {
@@ -76,7 +81,7 @@ func (f *fakeOLX) handleToken(w http.ResponseWriter, r *http.Request) {
 		f.validToken = fakeJWT("sub-1", time.Now().Add(15*time.Minute)) + fmt.Sprint(f.refreshes)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id_token": f.validToken, "access_token": "a", "expires_in": 900})
 	case "authorization_code":
-		if r.Form.Get("code") != "the-code" || r.Form.Get("code_verifier") == "" || r.Form.Get("redirect_uri") != DefaultRedirectURI {
+		if r.Form.Get("code") != "the-code" || r.Form.Get("code_verifier") == "" || r.Form.Get("redirect_uri") != testRedirect {
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(w, `{"error":"invalid_grant"}`)
 			return
@@ -456,7 +461,7 @@ func TestSocket(t *testing.T) {
 	token := f.validToken
 	origin := f.socketOrigin
 	f.lock.Unlock()
-	if origin != WebOrigin {
+	if origin != testOrigin {
 		t.Errorf("the socket handshake names the web app as its origin, got %q", origin)
 	}
 	for _, want := range []string{"X-Client%3DDESKTOP", "X-Client-Version%3D" + DefaultClientVersion, "access_token%3D" + url.QueryEscape(token)} {
@@ -505,7 +510,7 @@ func TestAuthCodeFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	q := authorize.Query()
-	if authorize.Path != "/oauth2/authorize" || q.Get("client_id") != DefaultClientID || q.Get("redirect_uri") != DefaultRedirectURI ||
+	if authorize.Path != "/oauth2/authorize" || q.Get("client_id") != MustSite("pl").ClientID || q.Get("redirect_uri") != testRedirect ||
 		q.Get("response_type") != "code" || q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") != pkce.Challenge || q.Get("state") != pkce.State {
 		t.Errorf("authorize URL wrong: %s", authorize)
 	}
@@ -513,21 +518,24 @@ func TestAuthCodeFlow(t *testing.T) {
 		t.Error("the verifier must never be in the authorize URL")
 	}
 
-	callback := DefaultRedirectURI + "?code=the-code&state=" + pkce.State
+	callback := testRedirect + "?code=the-code&state=" + pkce.State
 	code, err := ParseCallback(callback, pkce)
 	if err != nil || code != "the-code" {
 		t.Fatalf("code=%q err=%v", code, err)
 	}
+	if code, err = ParseCallback("view-source:"+callback, pkce); err != nil || code != "the-code" {
+		t.Errorf("the address as the source view shows it must be accepted: %q %v", code, err)
+	}
 	if code, err = ParseCallback("  the-code \n", pkce); err != nil || code != "the-code" {
 		t.Errorf("a bare code must be accepted: %q %v", code, err)
 	}
-	if _, err = ParseCallback(DefaultRedirectURI+"?code=x&state=other", pkce); err == nil {
+	if _, err = ParseCallback(testRedirect+"?code=x&state=other", pkce); err == nil {
 		t.Error("a callback from another attempt must be refused")
 	}
-	if _, err = ParseCallback(DefaultRedirectURI+"?error=access_denied", pkce); err == nil {
+	if _, err = ParseCallback(testRedirect+"?error=access_denied", pkce); err == nil {
 		t.Error("an error callback must be reported")
 	}
-	if _, err = ParseCallback(DefaultRedirectURI, pkce); err == nil {
+	if _, err = ParseCallback(testRedirect, pkce); err == nil {
 		t.Error("a callback without a code must be refused")
 	}
 
@@ -594,14 +602,52 @@ func TestBrowserHeaders(t *testing.T) {
 	for _, ua := range []string{"mautrix-olx/26.10", "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"} {
 		header := http.Header{}
-		setBrowserHeaders(header, ua, siteSameSite, http.MethodGet)
+		setBrowserHeaders(header, ua, testOrigin, siteSameSite, http.MethodGet)
 		if header.Get("User-Agent") != ua || len(header) != 1 {
 			t.Errorf("a User-Agent that is not Chrome's gets no Chrome headers: %v", header)
 		}
 	}
 	header := http.Header{}
-	setBrowserHeaders(header, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36", siteSameOrigin, http.MethodPost)
-	if header.Get("Sec-Ch-Ua-Platform") != `"macOS"` || header.Get("Origin") != WebOrigin {
+	setBrowserHeaders(header, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36", "https://www.olx.ua", siteSameOrigin, http.MethodPost)
+	if header.Get("Sec-Ch-Ua-Platform") != `"macOS"` || header.Get("Origin") != "https://www.olx.ua" {
 		t.Errorf("platform follows the User-Agent, and a same-origin POST names its origin: %v", header)
+	}
+}
+
+func TestSites(t *testing.T) {
+	seenClient := map[string]string{}
+	for _, site := range Sites {
+		if other, dup := seenClient[site.ClientID]; dup {
+			t.Errorf("%s and %s share a client ID", site.Code, other)
+		}
+		seenClient[site.ClientID] = site.Code
+		if site.Domain != "olx."+site.Code || site.SiteCode != "olx"+site.Code || site.Language == "" || site.WWWLanguage == "" {
+			t.Errorf("site %s is inconsistent: %+v", site.Code, site)
+		}
+		for _, name := range []string{site.Code, site.Domain, site.SiteCode, "https://www." + site.Domain + "/", " " + strings.ToUpper(site.Code) + " "} {
+			if got, err := LookupSite(name); err != nil || got.Code != site.Code {
+				t.Errorf("LookupSite(%q) = %v, %v", name, got.Code, err)
+			}
+		}
+	}
+	if site, err := LookupSite(""); err != nil || site.Code != DefaultSite {
+		t.Errorf("no site means the default one, got %v %v", site.Code, err)
+	}
+	if _, err := LookupSite("olx.com.br"); err == nil {
+		t.Error("an OLX on another platform must be refused")
+	}
+
+	cfg := Config{Site: MustSite("ua")}
+	cfg.setDefaults()
+	if cfg.ChatURL != "https://api.chat.olx.ua" || cfg.SocketURL != "wss://ws.chat.olx.ua" || cfg.WWWURL != "https://www.olx.ua" ||
+		cfg.SiteCode != "olxua" || cfg.Language != "uk-UA, uk" || cfg.WWWLanguage != "uk" ||
+		cfg.Auth.Host != "https://login.olx.ua" || cfg.Auth.ClientID != "309lsgh0deirlo2la9kmrmhe3v" ||
+		cfg.Auth.RedirectURI != "https://www.olx.ua/d/callback/" {
+		t.Errorf("a site's configuration follows from its domain: %+v", cfg)
+	}
+	authorize := AuthConfig{Site: MustSite("ro")}.AuthorizeURL(NewPKCE())
+	if !strings.HasPrefix(authorize, "https://login.olx.ro/oauth2/authorize?") || !strings.Contains(authorize, "client_id=7gantjdsv7233vniq4dthhm2hh") ||
+		!strings.Contains(authorize, url.QueryEscape("https://www.olx.ro/d/callback/")) {
+		t.Errorf("authorize URL for olx.ro: %s", authorize)
 	}
 }

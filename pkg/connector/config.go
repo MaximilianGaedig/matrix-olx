@@ -26,6 +26,8 @@ import (
 	up "go.mau.fi/util/configupgrade"
 	"gopkg.in/yaml.v3"
 	"maunium.net/go/mautrix/event"
+
+	"github.com/MaximilianGaedig/mautrix-olx/pkg/olxapi"
 )
 
 //go:embed example-config.yaml
@@ -46,6 +48,7 @@ type Config struct {
 	DisplaynameTemplate string `yaml:"displayname_template"`
 	RoomNameTemplate    string `yaml:"room_name_template"`
 
+	DefaultSite   string `yaml:"default_site"`
 	UserAgent     string `yaml:"user_agent"`
 	ClientVersion string `yaml:"client_version"`
 	Proxy         string `yaml:"proxy"`
@@ -80,6 +83,9 @@ func (c *Config) PostProcess() (err error) {
 	c.roomNameTemplate, err = template.New("room_name").Parse(c.RoomNameTemplate)
 	if err != nil {
 		return fmt.Errorf("invalid room_name_template: %w", err)
+	}
+	if _, err = olxapi.LookupSite(c.DefaultSite); err != nil {
+		return fmt.Errorf("invalid default_site: %w", err)
 	}
 	return nil
 }
@@ -131,6 +137,7 @@ func (c *Config) FormatRoomName(params RoomNameParams) string {
 func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "displayname_template")
 	helper.Copy(up.Str, "room_name_template")
+	helper.Copy(up.Str, "default_site")
 	helper.Copy(up.Str|up.Null, "user_agent")
 	helper.Copy(up.Str, "client_version")
 	helper.Copy(up.Str|up.Null, "proxy")
@@ -149,6 +156,7 @@ func (oc *OLXConnector) GetConfig() (string, any, up.Upgrader) {
 	return ExampleConfig, &oc.Config, &up.StructUpgrader{
 		SimpleUpgrader: up.SimpleUpgrader(upgradeConfig),
 		Blocks: [][]string{
+			{"default_site"},
 			{"user_agent"},
 			{"presence"},
 			{"sync"},

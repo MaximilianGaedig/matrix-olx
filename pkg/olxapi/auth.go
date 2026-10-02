@@ -31,16 +31,11 @@ import (
 	"time"
 )
 
-// OLX signs users in through an AWS Cognito user pool behind login.olx.pl. The
-// web app is a public OAuth client (no secret) that uses the authorization
-// code flow with PKCE; the bridge does the same and gets a session of its own,
-// separate from any browser's.
-const (
-	DefaultAuthHost    = "https://login.olx.pl"
-	DefaultClientID    = "6j7elk01p32o648o1io8lvhhab"
-	DefaultRedirectURI = "https://www.olx.pl/d/callback/"
-	authScope          = "openid email profile"
-)
+// OLX signs users in through an AWS Cognito user pool behind login.olx.<tld>,
+// one pool per site. The web app is a public OAuth client (no secret) that uses
+// the authorization code flow with PKCE; the bridge does the same and gets a
+// session of its own, separate from any browser's.
+const authScope = "openid email profile"
 
 // ErrLoggedOut means OLX no longer accepts the refresh token: the user has to
 // log in again.
@@ -83,8 +78,10 @@ func ParseClaims(idToken string) (*Claims, error) {
 	return &claims, nil
 }
 
-// AuthConfig says which OAuth client to be.
+// AuthConfig says which OAuth client to be: the web client of Site, unless
+// the fields below say otherwise.
 type AuthConfig struct {
+	Site        Site
 	Host        string
 	ClientID    string
 	RedirectURI string
@@ -92,18 +89,27 @@ type AuthConfig struct {
 }
 
 func (ac *AuthConfig) setDefaults() {
+	if ac.Site.Code == "" {
+		ac.Site = MustSite(DefaultSite)
+	}
 	if ac.Host == "" {
-		ac.Host = DefaultAuthHost
+		ac.Host = ac.Site.authHost()
 	}
 	if ac.ClientID == "" {
-		ac.ClientID = DefaultClientID
+		ac.ClientID = ac.Site.ClientID
 	}
 	if ac.RedirectURI == "" {
-		ac.RedirectURI = DefaultRedirectURI
+		ac.RedirectURI = ac.Site.redirectURI()
 	}
 	if ac.UserAgent == "" {
 		ac.UserAgent = ChromeUserAgent(DefaultChromeMajor)
 	}
+}
+
+// Redirect is the address OLX sends the browser to after the login.
+func (ac AuthConfig) Redirect() string {
+	ac.setDefaults()
+	return ac.RedirectURI
 }
 
 // PKCE is the secret half (verifier) and public half (challenge) of one
@@ -152,6 +158,8 @@ func (ac AuthConfig) AuthorizeURL(pkce *PKCE) string {
 // When the address carries a state, it has to be the one this attempt made.
 func ParseCallback(input string, pkce *PKCE) (string, error) {
 	input = strings.TrimSpace(input)
+	// The address as the browser's source view shows it.
+	input = strings.TrimSpace(strings.TrimPrefix(input, "view-source:"))
 	if input == "" {
 		return "", errors.New("nothing was pasted")
 	}
@@ -201,7 +209,7 @@ func (ac AuthConfig) tokenRequest(ctx context.Context, httpClient *http.Client, 
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	setBrowserHeaders(req.Header, ac.UserAgent, siteSameSite, http.MethodPost)
+	setBrowserHeaders(req.Header, ac.UserAgent, ac.Site.Origin(), siteSameSite, http.MethodPost)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -293,7 +301,7 @@ func (ac AuthConfig) Revoke(ctx context.Context, httpClient *http.Client, refres
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	setBrowserHeaders(req.Header, ac.UserAgent, siteSameSite, http.MethodPost)
+	setBrowserHeaders(req.Header, ac.UserAgent, ac.Site.Origin(), siteSameSite, http.MethodPost)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
