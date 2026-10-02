@@ -170,9 +170,13 @@ func (c *OLXClient) pollPresence(ctx context.Context, interval time.Duration) {
 		return
 	}
 	now := time.Now()
+	online := 0
 	for _, user := range users {
 		if user == nil || user.UUID == "" {
 			continue
+		}
+		if user.IsOnline {
+			online++
 		}
 		c.Main.presence.Update(user.UUID, mapPresence(user, now, interval))
 		if !user.IsOnline && !user.LastSeen.IsZero() {
@@ -180,6 +184,7 @@ func (c *OLXClient) pollPresence(ctx context.Context, interval time.Duration) {
 		}
 		c.updateGhostProfile(ctx, user)
 	}
+	c.UserLogin.Log.Debug().Int("asked", len(uuids)).Int("profiles", len(users)).Int("online", online).Msg("Polled OLX presence")
 }
 
 // mapPresence turns a profile into Matrix presence. An online state is good
