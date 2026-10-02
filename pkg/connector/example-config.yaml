@@ -1,0 +1,48 @@
+# Displayname template for OLX users.
+# {{.Name}} - the name the person shows on OLX
+# {{.Business}} - true for business accounts
+displayname_template: "{{.Name}} (OLX)"
+# Room name template. An OLX chat is always with one person about one ad, and the same
+# person can be in several chats, so the room name says both.
+# {{.Name}} - the other person's name
+# {{.Title}} - the ad's title
+# {{.Price}} - the ad's price, formatted ("1 900 zł"), empty if it has none
+room_name_template: "{{.Name}} · {{.Title}}"
+
+# The User-Agent to send to OLX. Empty means the bridge's own name and version.
+user_agent:
+# The version the bridge reports as its web client version (X-Client-Version).
+client_version: b86050d0_10123458
+# An HTTP or SOCKS5 proxy for everything the bridge sends to OLX.
+proxy:
+# A proxy for www.olx.pl only, which serves profiles (names, pictures, online status).
+# OLX refuses requests to it from datacenter addresses, so a bridge on a hosted server
+# only gets profiles and polled presence when this points at a proxy on a home connection.
+# Chatting itself does not need it. Empty means the same as `proxy`.
+www_proxy:
+
+presence:
+    # Bridge whether people are online to Matrix presence? Someone who writes, types or
+    # reads counts as online for a few minutes. Their status on OLX is polled on top of
+    # that, which needs www.olx.pl to be reachable (see www_proxy).
+    enabled: true
+    # How often to ask OLX who is online.
+    poll_interval: 1m
+    # How many people to ask about: the ones from the most recently active chats.
+    max_users: 80
+
+sync:
+    # Also create rooms for chats that are in the trash on OLX?
+    archived: true
+    # How often to go over the recent chats again to catch anything the live connection
+    # missed. 0 disables it; the bridge still resyncs every time it reconnects.
+    interval: 30m
+
+# The room tag for chats in OLX's trash ("Kosz"). Tagging a room with it moves the chat to
+# the trash and removing the tag takes it back out. Empty disables it.
+archive_tag: m.lowpriority
+# The room tag for chats on OLX's saved list ("Zapisane"). Empty disables it.
+saved_tag: m.favourite
+# What deleting a chat from Matrix does on OLX: false moves it to the trash, from where it
+# can be restored; true deletes it for good.
+delete_chat_permanently: false
