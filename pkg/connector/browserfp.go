@@ -34,13 +34,13 @@ import (
 
 	fhttp "github.com/bogdanfinn/fhttp"
 	tls_client "github.com/bogdanfinn/tls-client"
-	"github.com/bogdanfinn/tls-client/profiles"
+
+	"github.com/MaximilianGaedig/matrix-olx/pkg/olxapi"
 )
 
-// browserProfile is the Chrome fingerprint the www client impersonates. Chrome
-// 133's fingerprint is verified to pass OLX's WAF over HTTP/2. Keep it broadly
-// aligned with olxapi's Chrome User-Agent; the exact minor version need not match.
-var browserProfile = profiles.Chrome_133
+// The www client impersonates olxapi.BrowserProfile - the same Chrome profile
+// the User-Agent is derived from - so the TLS fingerprint and the User-Agent
+// always name the same Chrome version from one library-tracked source.
 
 // browserRoundTripper is an http.RoundTripper that forwards each request through
 // a tls-client HTTP client, so the TLS ClientHello and HTTP/2 SETTINGS look like
@@ -105,7 +105,7 @@ func (b *browserRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 // keeps its own redirect and cookie handling.
 func newBrowserTransport(proxy string) (http.RoundTripper, error) {
 	opts := []tls_client.HttpClientOption{
-		tls_client.WithClientProfile(browserProfile),
+		tls_client.WithClientProfile(olxapi.BrowserProfile),
 		tls_client.WithNotFollowRedirects(),
 		tls_client.WithTimeoutSeconds(180),
 	}

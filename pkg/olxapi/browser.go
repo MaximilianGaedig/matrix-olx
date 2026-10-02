@@ -22,15 +22,56 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/bogdanfinn/tls-client/profiles"
 )
 
 // The bridge talks to OLX the way OLX's website does when it runs in Chrome,
 // header for header: the User-Agent, the client hints derived from it, and
 // the fetch metadata a browser adds to requests a page makes.
 
-// DefaultChromeMajor is the Chrome release the default User-Agent names. Bump
-// it as Chrome moves on (or set user_agent in the config).
-const DefaultChromeMajor = 154
+// BrowserProfile is the Chrome TLS+HTTP/2 fingerprint the bridge presents on
+// www.olx.pl (used by the connector's browser transport): the newest desktop
+// Chrome tls-client ships. The library tracks Chrome for us, so a `go get -u`
+// on tls-client advances both the fingerprint and, through DefaultChromeMajor
+// below, the User-Agent that must match it - with no version to hand-maintain.
+var BrowserProfile = latestChromeProfile()
+
+// latestChromeProfile returns the newest desktop Chrome profile tls-client ships
+// (newer than its DefaultClientProfile, which trails the newest by design) so we
+// stay on current Chrome without picking a version. Falls back to the default.
+func latestChromeProfile() profiles.ClientProfile {
+	best := profiles.DefaultClientProfile
+	bestMajor := profileChromeMajor(best)
+	for _, p := range profiles.MappedTLSClients {
+		if p.GetClientHelloId().Client != "Chrome" {
+			continue
+		}
+		if major := profileChromeMajor(p); major > bestMajor {
+			best, bestMajor = p, major
+		}
+	}
+	return best
+}
+
+// DefaultChromeMajor is the Chrome major version the User-Agent and the client
+// hints name. It is read from BrowserProfile so the User-Agent can never drift
+// from the TLS fingerprint and is never a hand-maintained number. Set user_agent
+// in the config to override everything.
+var DefaultChromeMajor = profileChromeMajor(BrowserProfile)
+
+// profileChromeMajor reads the Chrome major version a tls-client profile mimics
+// from its ClientHelloID version string (e.g. "150" -> 150).
+func profileChromeMajor(p profiles.ClientProfile) int {
+	version := p.GetClientHelloId().Version
+	if i := strings.IndexByte(version, '.'); i >= 0 {
+		version = version[:i]
+	}
+	if major, err := strconv.Atoi(version); err == nil && major > 0 {
+		return major
+	}
+	return 131 // unreachable safety net: real Chrome profiles carry a version
+}
 
 // ChromeUserAgent is what desktop Chrome on Linux sends. Chrome freezes
 // everything but the major version.
