@@ -76,6 +76,8 @@ var webSocketHeaders = []string{
 	"Sec-WebSocket-Key",
 	"Sec-WebSocket-Version",
 	"Sec-WebSocket-Extensions",
+	// Browser casing; Go would otherwise canonicalise this to "Sec-Gpc".
+	"Sec-GPC",
 }
 
 // exactWebSocketHeaders sends the WebSocket handshake headers under their
@@ -125,15 +127,25 @@ func (c *Client) dialSocket(ctx context.Context) (*websocket.Conn, error) {
 	header := http.Header{}
 	header.Set("User-Agent", c.cfg.UserAgent)
 	if _, isChrome := chromeMajor(c.cfg.UserAgent); isChrome {
+		// Match a real browser's WebSocket handshake to ws.chat.olx.pl (checked
+		// against a captured HAR): the page origin, the GPC signal, cache
+		// headers and the full browser Accept-Encoding, and no fetch metadata.
 		header.Set("Origin", c.cfg.Site.Origin())
+		header.Set("Sec-GPC", "1")
 		header.Set("Accept-Language", c.cfg.Language)
 		header.Set("Cache-Control", "no-cache")
 		header.Set("Pragma", "no-cache")
+		header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
 	}
 	conn, _, err := websocket.Dial(dialCtx, c.cfg.SocketURL, &websocket.DialOptions{
 		HTTPClient:   &http.Client{Transport: exactWebSocketHeaders{c.HTTP.Transport}},
 		HTTPHeader:   header,
 		Subprotocols: c.socketProtocols(token),
+		// The browser offers permessage-deflate and OLX accepts it, so offer it
+		// too. coder/websocket advertises plain permessage-deflate rather than the
+		// browser's "; client_max_window_bits" param, but the negotiated result
+		// (plain permessage-deflate, per the HAR response) is identical.
+		CompressionMode: websocket.CompressionContextTakeover,
 	})
 	if err != nil {
 		return nil, err
