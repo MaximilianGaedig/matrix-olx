@@ -18,6 +18,7 @@ package connector
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -56,9 +57,17 @@ func (oc *OLXConnector) Init(bridge *bridgev2.Bridge) {
 	oc.Bridge = bridge
 }
 
-func newHTTPClient(proxy string) (*http.Client, error) {
+// newHTTPClient makes an HTTP client, optionally through a proxy. With http1
+// set it never speaks HTTP/2: www.olx.pl turns away HTTP/2 from anything that
+// is not a browser, and serves the same client over HTTP/1.1.
+func newHTTPClient(proxy string, http1 bool) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 60 * time.Second
+	if http1 {
+		transport.ForceAttemptHTTP2 = false
+		transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		transport.TLSClientConfig = &tls.Config{NextProtos: []string{"http/1.1"}}
+	}
 	if proxy != "" {
 		proxyURL, err := url.Parse(proxy)
 		if err != nil {
@@ -70,16 +79,17 @@ func newHTTPClient(proxy string) (*http.Client, error) {
 }
 
 func (oc *OLXConnector) Start(ctx context.Context) (err error) {
-	oc.httpClient, err = newHTTPClient(oc.Config.Proxy)
+	oc.httpClient, err = newHTTPClient(oc.Config.Proxy, false)
 	if err != nil {
 		return err
 	}
-	oc.wwwClient = oc.httpClient
-	if oc.Config.WWWProxy != "" && oc.Config.WWWProxy != oc.Config.Proxy {
-		oc.wwwClient, err = newHTTPClient(oc.Config.WWWProxy)
-		if err != nil {
-			return fmt.Errorf("www_proxy: %w", err)
-		}
+	wwwProxy := oc.Config.WWWProxy
+	if wwwProxy == "" {
+		wwwProxy = oc.Config.Proxy
+	}
+	oc.wwwClient, err = newHTTPClient(wwwProxy, true)
+	if err != nil {
+		return fmt.Errorf("www_proxy: %w", err)
 	}
 	if oc.Config.Presence.Enabled {
 		oc.presence = presence.NewManager(presence.Config{}, presence.GhostSender(oc.Bridge))

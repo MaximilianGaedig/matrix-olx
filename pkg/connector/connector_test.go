@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -204,5 +205,31 @@ func TestAttachmentKinds(t *testing.T) {
 	}
 	if replaceExt("", ".jpg") != "image.jpg" || replaceExt("a.b.webp", ".jpg") != "a.b.jpg" {
 		t.Error("replaceExt is off")
+	}
+}
+
+func TestWWWClientIsHTTP1Only(t *testing.T) {
+	www, err := newHTTPClient("socks5://127.0.0.1:1080", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := www.Transport.(*http.Transport)
+	if transport.ForceAttemptHTTP2 || transport.TLSNextProto == nil || len(transport.TLSNextProto) != 0 ||
+		len(transport.TLSClientConfig.NextProtos) != 1 || transport.TLSClientConfig.NextProtos[0] != "http/1.1" {
+		t.Error("the www client must not negotiate HTTP/2")
+	}
+	req, _ := http.NewRequest(http.MethodGet, "https://www.olx.pl/", nil)
+	if proxyURL, err := transport.Proxy(req); err != nil || proxyURL == nil || proxyURL.Host != "127.0.0.1:1080" {
+		t.Errorf("proxy = %v, %v", proxyURL, err)
+	}
+	chat, err := newHTTPClient("", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !chat.Transport.(*http.Transport).ForceAttemptHTTP2 {
+		t.Error("the chat client keeps HTTP/2")
+	}
+	if _, err = newHTTPClient("://bad", false); err == nil {
+		t.Error("an invalid proxy address must be refused")
 	}
 }
