@@ -46,6 +46,8 @@ const (
 	DefaultClientVersion = "b86050d0_10123458"
 	DefaultPlatform      = "DESKTOP"
 	DefaultLanguage      = "pl-PL, pl"
+	// DefaultWWWLanguage is what the website sends to its own API on www.olx.pl.
+	DefaultWWWLanguage = "pl"
 
 	// MaxPageSize is the largest conversation list page the website asks for.
 	MaxPageSize = 40
@@ -64,6 +66,7 @@ type Config struct {
 	ClientVersion string
 	Platform      string
 	Language      string
+	WWWLanguage   string
 	UserAgent     string
 	DeviceID      string
 	Auth          AuthConfig
@@ -83,6 +86,8 @@ func (c *Config) setDefaults() {
 	def(&c.ClientVersion, DefaultClientVersion)
 	def(&c.Platform, DefaultPlatform)
 	def(&c.Language, DefaultLanguage)
+	def(&c.WWWLanguage, DefaultWWWLanguage)
+	def(&c.UserAgent, ChromeUserAgent(DefaultChromeMajor))
 	c.Auth.UserAgent = c.UserAgent
 	c.Auth.setDefaults()
 }
@@ -235,21 +240,20 @@ func (c *Client) doOnce(ctx context.Context, req request, token string, out any)
 		return err
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+token)
-	httpReq.Header.Set("Accept", "application/json")
-	httpReq.Header.Set("Accept-Language", c.cfg.Language)
 	httpReq.Header.Set("X-Client", c.cfg.Platform)
-	if c.cfg.UserAgent != "" {
-		httpReq.Header.Set("User-Agent", c.cfg.UserAgent)
-	}
 	if req.www {
+		httpReq.Header.Set("Accept-Language", c.cfg.WWWLanguage)
 		httpReq.Header.Set("X-Platform-Type", "mobile-html5")
 		if c.cfg.DeviceID != "" {
 			httpReq.Header.Set("X-Device-Id", c.cfg.DeviceID)
 		}
+		setBrowserHeaders(httpReq.Header, c.cfg.UserAgent, siteSameOrigin, req.method)
 	} else {
+		httpReq.Header.Set("Accept-Language", c.cfg.Language)
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("X-Site-Code", c.cfg.SiteCode)
 		httpReq.Header.Set("X-Client-Version", c.cfg.ClientVersion)
+		setBrowserHeaders(httpReq.Header, c.cfg.UserAgent, siteSameSite, req.method)
 	}
 	for key, value := range req.headers {
 		httpReq.Header.Set(key, value)
@@ -531,9 +535,7 @@ func (c *Client) uploadOnce(ctx context.Context, token string, data []byte, mime
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", mimeType)
 	req.Header.Set("Expires", time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02T15:04:05.000Z"))
-	if c.cfg.UserAgent != "" {
-		req.Header.Set("User-Agent", c.cfg.UserAgent)
-	}
+	setBrowserHeaders(req.Header, c.cfg.UserAgent, siteCrossSite, http.MethodPost)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err

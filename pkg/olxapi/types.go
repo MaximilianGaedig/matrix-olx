@@ -108,17 +108,17 @@ func (t Time) MarshalJSON() ([]byte, error) {
 
 // Conversation is one chat: the logged-in user and one other person, about one ad.
 type Conversation struct {
-	ID          string      `json:"id"`
-	UserID      FlexID      `json:"user_id"`
-	UserUUID    string      `json:"user_uuid"`
-	ReadOnly    bool        `json:"read_only"`
-	Respondent  Respondent  `json:"respondent"`
-	Archived    bool        `json:"archived"`
-	Ad          *Ad         `json:"ad"`
-	Context     *AdContext  `json:"context"`
-	IsObserved  bool        `json:"is_observed"`
-	Messages    []*Message  `json:"messages"`
-	UnreadCount int         `json:"unread_count"`
+	ID          string     `json:"id"`
+	UserID      FlexID     `json:"user_id"`
+	UserUUID    string     `json:"user_uuid"`
+	ReadOnly    bool       `json:"read_only"`
+	Respondent  Respondent `json:"respondent"`
+	Archived    bool       `json:"archived"`
+	Ad          *Ad        `json:"ad"`
+	Context     *AdContext `json:"context"`
+	IsObserved  bool       `json:"is_observed"`
+	Messages    []*Message `json:"messages"`
+	UnreadCount int        `json:"unread_count"`
 }
 
 // LatestMessage is the newest message the conversation carries, if any.

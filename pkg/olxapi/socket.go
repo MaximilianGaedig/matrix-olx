@@ -71,9 +71,15 @@ func (c *Client) dialSocket(ctx context.Context) (*websocket.Conn, error) {
 	}
 	dialCtx, cancel := context.WithTimeout(ctx, socketDialTimeout)
 	defer cancel()
+	// A browser's WebSocket handshake carries the page's origin and no fetch
+	// metadata.
 	header := http.Header{}
-	if c.cfg.UserAgent != "" {
-		header.Set("User-Agent", c.cfg.UserAgent)
+	header.Set("User-Agent", c.cfg.UserAgent)
+	if _, isChrome := chromeMajor(c.cfg.UserAgent); isChrome {
+		header.Set("Origin", WebOrigin)
+		header.Set("Accept-Language", c.cfg.Language)
+		header.Set("Cache-Control", "no-cache")
+		header.Set("Pragma", "no-cache")
 	}
 	conn, _, err := websocket.Dial(dialCtx, c.cfg.SocketURL, &websocket.DialOptions{
 		HTTPClient:   &http.Client{Transport: c.HTTP.Transport},

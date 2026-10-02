@@ -20,6 +20,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const testUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+
 func fakeJWT(sub string, exp time.Time) string {
 	enc := func(v any) string {
 		data, _ := json.Marshal(v)
@@ -41,6 +43,7 @@ type fakeOLX struct {
 	requests      []*http.Request
 	bodies        []string
 	socketProtos  []string
+	socketOrigin  string
 	socketFrames  chan string
 	pings         atomic.Int32
 }
@@ -140,8 +143,12 @@ func (f *fakeOLX) handleAPI(w http.ResponseWriter, r *http.Request) {
 func (f *fakeOLX) handleSocket(w http.ResponseWriter, r *http.Request) {
 	f.lock.Lock()
 	f.socketProtos = append([]string(nil), r.Header.Values("Sec-WebSocket-Protocol")...)
+	f.socketOrigin = r.Header.Get("Origin")
 	f.lock.Unlock()
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{url.QueryEscape("X-Client=DESKTOP")}})
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		Subprotocols:   []string{url.QueryEscape("X-Client=DESKTOP")},
+		OriginPatterns: []string{"www.olx.pl"},
+	})
 	if err != nil {
 		return
 	}
@@ -174,7 +181,7 @@ func (f *fakeOLX) client(tokens Tokens) *Client {
 		WWWURL:    f.server.URL,
 		UploadURL: f.server.URL + "/upload",
 		SocketURL: "ws" + strings.TrimPrefix(f.server.URL, "http") + "/ws",
-		UserAgent: "mautrix-olx/test",
+		UserAgent: testUA,
 		DeviceID:  "device-1",
 		Auth:      AuthConfig{Host: f.server.URL},
 	}
@@ -247,7 +254,10 @@ func TestListAndPagination(t *testing.T) {
 	}
 	for header, want := range map[string]string{
 		"X-Api-Version": "2", "X-Site-Code": "olxpl", "X-Client": "DESKTOP",
-		"X-Client-Version": DefaultClientVersion, "User-Agent": "mautrix-olx/test",
+		"X-Client-Version": DefaultClientVersion, "User-Agent": testUA,
+		"Accept": "*/*", "Accept-Language": "pl-PL, pl", "Origin": "https://www.olx.pl", "Referer": "https://www.olx.pl/",
+		"Sec-Ch-Ua": `"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"`, "Sec-Ch-Ua-Mobile": "?0",
+		"Sec-Ch-Ua-Platform": `"Linux"`, "Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Dest": "empty",
 	} {
 		if got := first.Header.Get(header); got != want {
 			t.Errorf("header %s = %q, want %q", header, got, want)
@@ -378,6 +388,9 @@ func TestUploadAndUsers(t *testing.T) {
 		t.Errorf("attachment = %+v", att)
 	}
 	req, body := f.lastRequest()
+	if req.Header.Get("Sec-Fetch-Site") != "cross-site" || req.Header.Get("Origin") != "https://www.olx.pl" {
+		t.Errorf("the upload goes to another site: %v", req.Header)
+	}
 	if req.URL.Path != "/upload" || body != "jpegdata" || req.Header.Get("Content-Type") != "image/jpeg" || req.Header.Get("Expires") == "" {
 		t.Errorf("upload request wrong: %s %q %v", req.URL.Path, body, req.Header)
 	}
@@ -392,6 +405,10 @@ func TestUploadAndUsers(t *testing.T) {
 	}
 	if req.Header.Get("X-Device-Id") != "device-1" || req.Header.Get("X-Site-Code") != "" {
 		t.Errorf("www requests carry the device ID and no chat headers: %v", req.Header)
+	}
+	if req.Header.Get("Sec-Fetch-Site") != "same-origin" || req.Header.Get("Origin") != "" ||
+		req.Header.Get("Referer") != "https://www.olx.pl/myaccount/answers/" || req.Header.Get("Accept-Language") != "pl" {
+		t.Errorf("a GET to www.olx.pl is same-origin: full referrer, no Origin: %v", req.Header)
 	}
 	if len(users) != 1 || !users[0].IsOnline || users[0].LastSeen.IsZero() || users[0].UserPhoto == "" {
 		t.Errorf("users = %+v", users[0])
@@ -434,7 +451,11 @@ func TestSocket(t *testing.T) {
 	f.lock.Lock()
 	protos := strings.Join(f.socketProtos, ", ")
 	token := f.validToken
+	origin := f.socketOrigin
 	f.lock.Unlock()
+	if origin != WebOrigin {
+		t.Errorf("the socket handshake names the web app as its origin, got %q", origin)
+	}
 	for _, want := range []string{"X-Client%3DDESKTOP", "X-Client-Version%3D" + DefaultClientVersion, "access_token%3D" + url.QueryEscape(token)} {
 		if !strings.Contains(protos, want) {
 			t.Errorf("socket subprotocols %q lack %q", protos, want)
@@ -551,5 +572,33 @@ func TestFlexibleTypes(t *testing.T) {
 		if got := price.String(); got != want {
 			t.Errorf("price = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestBrowserHeaders(t *testing.T) {
+	// Sec-CH-UA as real Chrome releases send it.
+	for major, want := range map[int]string{
+		131: `"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"`,
+		140: `"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"`,
+	} {
+		if got := secCHUA(major); got != want {
+			t.Errorf("secCHUA(%d) = %s, want %s", major, got, want)
+		}
+	}
+	if major, ok := chromeMajor(ChromeUserAgent(DefaultChromeMajor)); !ok || major != DefaultChromeMajor {
+		t.Errorf("the default User-Agent must name Chrome %d, got %d %v", DefaultChromeMajor, major, ok)
+	}
+	for _, ua := range []string{"mautrix-olx/26.10", "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0"} {
+		header := http.Header{}
+		setBrowserHeaders(header, ua, siteSameSite, http.MethodGet)
+		if header.Get("User-Agent") != ua || len(header) != 1 {
+			t.Errorf("a User-Agent that is not Chrome's gets no Chrome headers: %v", header)
+		}
+	}
+	header := http.Header{}
+	setBrowserHeaders(header, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36", siteSameOrigin, http.MethodPost)
+	if header.Get("Sec-Ch-Ua-Platform") != `"macOS"` || header.Get("Origin") != WebOrigin {
+		t.Errorf("platform follows the User-Agent, and a same-origin POST names its origin: %v", header)
 	}
 }

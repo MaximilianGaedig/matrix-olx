@@ -101,6 +101,9 @@ func (ac *AuthConfig) setDefaults() {
 	if ac.RedirectURI == "" {
 		ac.RedirectURI = DefaultRedirectURI
 	}
+	if ac.UserAgent == "" {
+		ac.UserAgent = ChromeUserAgent(DefaultChromeMajor)
+	}
 }
 
 // PKCE is the secret half (verifier) and public half (challenge) of one
@@ -198,10 +201,7 @@ func (ac AuthConfig) tokenRequest(ctx context.Context, httpClient *http.Client, 
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	if ac.UserAgent != "" {
-		req.Header.Set("User-Agent", ac.UserAgent)
-	}
+	setBrowserHeaders(req.Header, ac.UserAgent, siteSameSite, http.MethodPost)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -293,9 +293,7 @@ func (ac AuthConfig) Revoke(ctx context.Context, httpClient *http.Client, refres
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if ac.UserAgent != "" {
-		req.Header.Set("User-Agent", ac.UserAgent)
-	}
+	setBrowserHeaders(req.Header, ac.UserAgent, siteSameSite, http.MethodPost)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err

@@ -34,7 +34,7 @@ import (
 	"github.com/MaximilianGaedig/mautrix-olx/pkg/presence"
 )
 
-// Version is the bridge's version, set by main for the default User-Agent.
+// Version is the bridge's version, set by main.
 var Version = "dev"
 
 type OLXConnector struct {
@@ -101,11 +101,13 @@ func (oc *OLXConnector) Start(ctx context.Context) (err error) {
 	return nil
 }
 
+// userAgent is the User-Agent sent to OLX: by default the one of the browser
+// its web app runs in.
 func (oc *OLXConnector) userAgent() string {
 	if oc.Config.UserAgent != "" {
 		return oc.Config.UserAgent
 	}
-	return "mautrix-olx/" + Version
+	return olxapi.ChromeUserAgent(olxapi.DefaultChromeMajor)
 }
 
 func (oc *OLXConnector) apiConfig(deviceID string) olxapi.Config {

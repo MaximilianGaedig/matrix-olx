@@ -9,7 +9,9 @@ displayname_template: "{{.Name}} (OLX)"
 # {{.Price}} - the ad's price, formatted ("1 900 zł"), empty if it has none
 room_name_template: "{{.Name}} · {{.Title}}"
 
-# The User-Agent to send to OLX. Empty means the bridge's own name and version.
+# The User-Agent to send to OLX. Empty means that of current desktop Chrome on Linux, which
+# is what OLX's web app runs in; the browser headers that go with it (client hints, fetch
+# metadata, origin) are derived from it. Set it to your own browser's to match that instead.
 user_agent:
 # The version the bridge reports as its web client version (X-Client-Version).
 client_version: b86050d0_10123458
