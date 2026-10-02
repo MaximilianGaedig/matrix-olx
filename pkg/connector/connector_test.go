@@ -55,7 +55,7 @@ func TestExampleConfigParses(t *testing.T) {
 	if !cfg.Presence.Enabled || cfg.Presence.PollInterval.Seconds() != 60 || cfg.Presence.MaxUsers != 80 ||
 		!cfg.Sync.Archived || cfg.Sync.Interval.Minutes() != 30 ||
 		cfg.ArchiveTag != event.RoomTagLowPriority || cfg.SavedTag != event.RoomTagFavourite ||
-		cfg.ClientVersion == "" || cfg.DeleteChatPermanently || len(cfg.Sites) != 1 || cfg.Sites[0] != "pl" {
+		cfg.ClientVersion != "" || cfg.DeleteChatPermanently || len(cfg.Sites) != 1 || cfg.Sites[0] != "pl" {
 		t.Errorf("example config parsed as %+v", cfg)
 	}
 }
